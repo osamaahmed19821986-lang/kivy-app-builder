@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -18,15 +18,29 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Build APK with Buildozer
-        uses: ArtemShtepenko/Buildozer-action@v1.2.0
-        id: buildozer
-        with:
-          command: buildozer android debug
-          subfolder: .
+      - name: Install System Dependencies & Buildozer
+        run: |
+          sudo apt update
+          sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libffi-dev libssl-dev cmake
+          pip install --upgrade "cython<3.0" "buildozer==1.5.0"
 
-      - name: Upload APK Artifact
+      - name: Auto-generate buildozer.spec if missing
+        run: |
+          if [ ! -f buildozer.spec ]; then
+            buildozer init
+            sed -i 's/^requirements = .*/requirements = python3,kivy,reportlab,openpyxl,pillow/' buildozer.spec
+            sed -i 's/^# android.archs = .*/android.archs = arm64-v8a/' buildozer.spec
+            sed -i 's/^android.archs = .*/android.archs = arm64-v8a/' buildozer.spec
+            sed -i 's/^# android.accept_sdk_license = .*/android.accept_sdk_license = True/' buildozer.spec
+            sed -i 's/^#\? \?android.ndk = .*/android.ndk = 25b/' buildozer.spec
+          fi
+
+      - name: Build APK with Buildozer
+        run: |
+          yes | buildozer -v android debug
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MyApp-APK
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
