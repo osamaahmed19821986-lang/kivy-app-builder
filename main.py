@@ -1,6 +1,8 @@
 import calendar
 from datetime import datetime
 import os
+import sys
+import traceback
 import openpyxl
 
 # مكتبات Kivy الأساسية
@@ -15,37 +17,37 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 
-# مكتبات الـ PDF (fpdf2) واللغة العربية
+# مكتبات الـ PDF واللغة العربية
 import arabic_reshaper
 from bidi.algorithm import get_display
 from fpdf import FPDF
 
-# --- 1. تحديد مسار الخط العربي المرفق بالمشروع وتصحيحه ---
+# --- تحديد مسار الخط العربي المرفق بالمشروع ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, "arial.ttf")
 
 
 def init_arabic_font():
-  if os.path.exists(FONT_PATH):
-    LabelBase.register(name="Roboto", fn_regular=FONT_PATH)
-  else:
-    font_paths = [
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\tahoma.ttf",
-        "arial.ttf",
-        "tahoma.ttf",
-        "/system/fonts/Roboto-Regular.ttf",
-    ]
-    for font in font_paths:
-      if os.path.exists(font):
-        LabelBase.register(name="Roboto", fn_regular=font)
-        break
+  try:
+    if os.path.exists(FONT_PATH):
+      LabelBase.register(name="Roboto", fn_regular=FONT_PATH)
+    else:
+      font_paths = [
+          "/system/fonts/Roboto-Regular.ttf",
+          "/system/fonts/DroidSans.ttf",
+          "arial.ttf",
+      ]
+      for font in font_paths:
+        if os.path.exists(font):
+          LabelBase.register(name="Roboto", fn_regular=font)
+          break
+  except Exception as e:
+    print(f"Font loading note: {e}")
 
 
 init_arabic_font()
 
 
-# دالة مساعدة لضبط اتجاه وتشكيل الحروف العربية
 def ar(text):
   if text is None or text == "" or str(text).strip().lower() == "nan":
     return ""
@@ -84,51 +86,66 @@ def parse_date(val):
 class CoordinationKivyApp(App):
 
   def build(self):
-    self.title = "منظومة تنسيق رياض الأطفال - أندرويد أوفلاين"
+    # حماية التطبيق من الانهيار المفاجئ وعرض الشاشة الحامية عند وجود خطأ
+    try:
+      return self.create_main_ui()
+    except Exception as e:
+      error_trace = traceback.format_exc()
+      err_box = BoxLayout(orientation="vertical", padding=15)
+      err_lbl = Label(
+        text=f"حدث خطأ أثناء تشغيل التطبيق:\n\n{error_trace}",
+        color=(1, 0, 0, 1),
+        font_size="11sp",
+        halign="left",
+      )
+      err_lbl.bind(size=err_lbl.setter("text_size"))
+      err_box.add_widget(err_lbl)
+      return err_box
 
+  def create_main_ui(self):
+    self.title = "منظومة تنسيق رياض الأطفال"
     self.excel_path = ""
     self.logo_path = ""
     self.school_inputs = {}
 
-    # الحاوية الرئيسية للتطبيق
     root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
-    # 1. ترويسة التطبيق
+    # 1. الترويسة
     title_lbl = Label(
-        text=ar("نظام التنسيق الإلكتروني المطور (إصدار أندرويد أوفلاين)"),
-        font_size="18sp",
+        text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
+        font_size="16sp",
         bold=True,
         size_hint_y=None,
-        height=40,
+        height=35,
         color=(0.12, 0.24, 0.35, 1),
     )
     root.add_widget(title_lbl)
 
-    # 2. قسم اختيار الملفات (Excel واللوجو)
+    # 2. قسم اختيار الملفات
     files_box = BoxLayout(
-        orientation="vertical", spacing=8, size_hint_y=None, height=130
+        orientation="vertical", spacing=5, size_hint_y=None, height=110
     )
 
     btn_excel = Button(
         text=ar("اختر ملف الإكسيل الرئيسي (.xlsx)"),
         size_hint_y=None,
-        height=38,
+        height=35,
     )
     btn_excel.bind(on_press=lambda instance: self.open_file_picker("excel"))
     self.excel_status = Label(
         text=ar("لم يتم اختيار ملف الإكسيل"),
         color=(0.5, 0.5, 0.5, 1),
-        font_size="12sp",
+        font_size="11sp",
     )
 
     btn_logo = Button(
-        text=ar("اختر صورة الشعار / اللوجو"), size_hint_y=None, height=38
+        text=ar("اختر صورة الشعار / اللوجو"), size_hint_y=None, height=35
     )
     btn_logo.bind(on_press=lambda instance: self.open_file_picker("logo"))
     self.logo_status = Label(
         text=ar("لم يتم اختيار اللوجو (اختياري)"),
         color=(0.5, 0.5, 0.5, 1),
-        font_size="12sp",
+        font_size="11sp",
     )
 
     files_box.add_widget(btn_excel)
@@ -137,20 +154,20 @@ class CoordinationKivyApp(App):
     files_box.add_widget(self.logo_status)
     root.add_widget(files_box)
 
-    # 3. إعدادات تاريخ الاحتساب والمرحلة
+    # 3. إعدادات التاريخ والمرحلة
     date_box = BoxLayout(
-        orientation="vertical", spacing=5, size_hint_y=None, height=85
+        orientation="vertical", spacing=5, size_hint_y=None, height=80
     )
     date_box.add_widget(
         Label(
             text=ar("إعدادات التنسيق والسن المستهدف:"),
             bold=True,
             size_hint_y=None,
-            height=25,
+            height=20,
         )
     )
 
-    inputs_grid = GridLayout(cols=4, spacing=10, size_hint_y=None, height=35)
+    inputs_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=30)
     self.day_tf = TextInput(text="1", multiline=False, input_filter="int")
     self.month_tf = TextInput(text="10", multiline=False, input_filter="int")
     self.year_tf = TextInput(text="2026", multiline=False, input_filter="int")
@@ -162,27 +179,26 @@ class CoordinationKivyApp(App):
     inputs_grid.add_widget(self.stage_tf)
     date_box.add_widget(inputs_grid)
 
-    # عناوين حقول التاريخ
-    labels_grid = GridLayout(cols=4, spacing=10, size_hint_y=None, height=20)
-    labels_grid.add_widget(Label(text=ar("اليوم"), font_size="11sp"))
-    labels_grid.add_widget(Label(text=ar("الشهر"), font_size="11sp"))
-    labels_grid.add_widget(Label(text=ar("السنة"), font_size="11sp"))
-    labels_grid.add_widget(Label(text=ar("المرحلة"), font_size="11sp"))
+    labels_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=18)
+    labels_grid.add_widget(Label(text=ar("اليوم"), font_size="10sp"))
+    labels_grid.add_widget(Label(text=ar("الشهر"), font_size="10sp"))
+    labels_grid.add_widget(Label(text=ar("السنة"), font_size="10sp"))
+    labels_grid.add_widget(Label(text=ar("المرحلة"), font_size="10sp"))
     date_box.add_widget(labels_grid)
 
     root.add_widget(date_box)
 
-    # 4. قائمة المدارس الديناميكية داخل ScrollView
+    # 4. قائمة المدارس
     root.add_widget(
         Label(
             text=ar("الكثافات والحد الأدنى للسن لكل مدرسة:"),
             bold=True,
             size_hint_y=None,
-            height=30,
+            height=25,
         )
     )
 
-    self.schools_layout = GridLayout(cols=1, spacing=10, size_hint_y=None)
+    self.schools_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
     self.schools_layout.bind(
         minimum_height=self.schools_layout.setter("height")
     )
@@ -191,25 +207,25 @@ class CoordinationKivyApp(App):
     scroll_view.add_widget(self.schools_layout)
     root.add_widget(scroll_view)
 
-    # 5. زر التنسيق وشريط الحالة
+    # 5. زر التنسيق
     bottom_box = BoxLayout(
-        orientation="vertical", spacing=8, size_hint_y=None, height=90
+        orientation="vertical", spacing=5, size_hint_y=None, height=80
     )
     self.run_btn = Button(
-        text=ar("بدء معالجة التنسيق وتوليد الكشوف والتقارير"),
+        text=ar("بدء معالجة التنسيق وتوليد التقارير"),
         background_color=(0.07, 0.3, 0.36, 1),
         disabled=True,
         size_hint_y=None,
-        height=45,
+        height=40,
     )
     self.run_btn.bind(on_press=self.start_coordination)
 
     self.status_txt = Label(
-        text=ar("جاهز.. برجاء تحميل ملف الإكسيل أولاً."),
+        text=ar("جاهز.. قم باختيار ملف الإكسيل أولاً."),
         color=(0.3, 0.3, 0.3, 1),
-        font_size="13sp",
+        font_size="11sp",
         size_hint_y=None,
-        height=35,
+        height=30,
     )
 
     bottom_box.add_widget(self.run_btn)
@@ -218,10 +234,16 @@ class CoordinationKivyApp(App):
 
     return root
 
-  # نافذة اختيار الملفات التفاعلية
   def open_file_picker(self, file_type):
     content = BoxLayout(orientation="vertical", spacing=10)
-    filechooser = FileChooserListView(path=os.path.expanduser("~"))
+
+    # مسار آمن للأندرويد
+    default_path = (
+        "/sdcard/Download"
+        if os.path.exists("/sdcard/Download")
+        else "/sdcard"
+    )
+    filechooser = FileChooserListView(path=default_path)
 
     if file_type == "excel":
       filechooser.filters = ["*.xlsx"]
@@ -271,15 +293,6 @@ class CoordinationKivyApp(App):
         str(name).replace("\t", "").replace("\r", "").replace("\n", "").strip()
     )
 
-  def format_arabic_text(self, text):
-    if text is None or text == "" or str(text).strip().lower() == "nan":
-      return ""
-    try:
-      reshaped = arabic_reshaper.reshape(str(text))
-      return get_display(reshaped)
-    except:
-      return str(text)
-
   def get_stage_arabic(self, stage_num):
     stages = {
         "1": "الأولى",
@@ -321,7 +334,7 @@ class CoordinationKivyApp(App):
 
       for sch_name in unique_schools:
         row_box = BoxLayout(
-            orientation="horizontal", size_hint_y=None, height=40, spacing=5
+            orientation="horizontal", size_hint_y=None, height=35, spacing=5
         )
 
         name_lbl = Label(text=ar(sch_name), size_hint_x=0.4, halign="right")
@@ -368,7 +381,6 @@ class CoordinationKivyApp(App):
     except:
       return "", "", ""
 
-  # --- دالة إنتاج ملفات الـ PDF لكل مدرسة باستخدام FPDF2 ---
   def generate_pdf_report(
       self, school_name, students_list, pdf_file_path, stage_arabic, calc_date
   ):
@@ -376,33 +388,26 @@ class CoordinationKivyApp(App):
       pdf = FPDF(orientation="P", unit="mm", format="A4")
       pdf.add_page()
 
-      font_to_use = FONT_PATH if os.path.exists(FONT_PATH) else "arial.ttf"
-      if os.path.exists(font_to_use):
+      font_to_use = FONT_PATH if os.path.exists(FONT_PATH) else None
+      if font_to_use:
         pdf.add_font("ArabicFont", "", font_to_use)
         pdf.set_font("ArabicFont", size=14)
       else:
         pdf.set_font("Helvetica", size=12)
 
-      # ترويسة التقرير
       pdf.cell(
           190, 10, txt=ar("مديرية التربية و التعليم بأسوان"), ln=True, align="C"
       )
       pdf.cell(
           190,
           8,
-          txt=ar(
-              f"كشف التنسيق للطلاب المقبولين بمدرسة: {school_name} - المرحلة"
-              f" {stage_arabic}"
-          ),
+          txt=ar(f"كشف التنسيق لمدرسة: {school_name} - المرحلة {stage_arabic}"),
           ln=True,
           align="C",
       )
       pdf.ln(5)
 
-      # رؤوس الجدول
-      pdf.set_font(
-          "ArabicFont" if os.path.exists(font_to_use) else "Helvetica", size=10
-      )
+      pdf.set_font("ArabicFont" if font_to_use else "Helvetica", size=10)
       pdf.cell(15, 8, txt=ar("م"), border=1, align="C")
       pdf.cell(65, 8, txt=ar("اسم الطالب"), border=1, align="C")
       pdf.cell(30, 8, txt=ar("تاريخ الميلاد"), border=1, align="C")
@@ -410,7 +415,6 @@ class CoordinationKivyApp(App):
       pdf.cell(40, 8, txt=ar("الملاحظات"), border=1, align="C")
       pdf.ln(8)
 
-      # أسطر الطلاب
       for idx, st in enumerate(students_list, start=1):
         dob_str = st["dob_dt"].strftime("%Y-%m-%d") if st["dob_dt"] else ""
         y, m, d = self.calculate_exact_ymd(st["dob_dt"], calc_date)
@@ -425,7 +429,7 @@ class CoordinationKivyApp(App):
 
       pdf.output(pdf_file_path)
     except Exception as e:
-      print(f"خطأ أثناء توليد PDF لـ {school_name}: {e}")
+      print(f"PDF error: {e}")
 
   def start_coordination(self, instance):
     year_str = self.year_tf.text
@@ -455,10 +459,7 @@ class CoordinationKivyApp(App):
 
     wb = openpyxl.load_workbook(self.excel_path)
     sheet_students_name = [s for s in wb.sheetnames if "الطلاب" in s][0]
-    sheet_schools_name = [s for s in wb.sheetnames if "المدارس" in s][0]
-
     ws_students = wb[sheet_students_name]
-    ws_schools = wb[sheet_schools_name]
 
     headers = [cell.value for cell in ws_students[1]]
     headers_str = [str(h) if h is not None else "" for h in headers]
@@ -576,11 +577,7 @@ class CoordinationKivyApp(App):
         continue
 
       dob_dt = st["dob_dt"]
-      if dob_dt:
-        s_age = ((calc_date - dob_dt).days) / 365.25
-      else:
-        s_age = 0
-
+      s_age = ((calc_date - dob_dt).days) / 365.25 if dob_dt else 0
       allocated = False
       rejected_by_age = False
 
@@ -633,7 +630,6 @@ class CoordinationKivyApp(App):
             else "استنفاذ رغبات"
         )
 
-    # حفظ النتائج في شيت الإكسيل
     for st in students:
       r_idx = st["row_idx"]
       ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
@@ -642,7 +638,6 @@ class CoordinationKivyApp(App):
 
     wb.save(output_file)
 
-    # --- توليد تقارير الـ PDF لكل مدرسة وقائمة الانتظار ---
     grouped_students = {}
     for st in students:
       alloc = st["out_name"] or "غير مسكن"
