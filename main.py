@@ -1,8 +1,10 @@
 import sys
 import os
+import calendar
 import traceback
+from datetime import datetime
 
-# --- حارس الإقلاع: فحص المكتبات قبل تشغيل الواجهة ---
+# --- 1. حارس الإقلاع: فحص المكتبات قبل تشغيل الواجهة ---
 IMPORT_ERRORS = []
 
 try:
@@ -29,24 +31,23 @@ except Exception as e:
 try:
     from kivy.app import App
     from kivy.uix.boxlayout import BoxLayout
-    from kivy.uix.button import Button
-    from kivy.uix.label import Label
-    from kivy.uix.textinput import TextInput
     from kivy.uix.gridlayout import GridLayout
     from kivy.uix.scrollview import ScrollView
-    from kivy.uix.filechooser import FileChooserListView
+    from kivy.uix.label import Label
+    from kivy.uix.textinput import TextInput
+    from kivy.uix.button import Button
     from kivy.uix.popup import Popup
+    from kivy.uix.filechooser import FileChooserListView
     from kivy.core.text import LabelBase
 except Exception as e:
     IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
-import calendar
-from datetime import datetime
 
-# --- تسجيل الخط العربي بدون المساس بالخط الافتراضي للنظام ---
+# --- 2. إعداد الخطوط واللغة العربية ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, "arial.ttf")
 
+# تسجيل الخط العربي لواجهة Kivy
 if os.path.exists(FONT_PATH):
     try:
         LabelBase.register(name="CustomArabic", fn_regular=FONT_PATH)
@@ -54,15 +55,17 @@ if os.path.exists(FONT_PATH):
         print(f"Font Reg Error: {e}")
 
 def ar(text):
+    """دالة ضبط اتجاه وتشكيل الحروف العربية"""
     if text is None or text == "" or str(text).strip().lower() == "nan":
         return ""
     try:
         reshaped = arabic_reshaper.reshape(str(text))
         return get_display(reshaped)
-    except:
+    except Exception:
         return str(text)
 
 def parse_date(val):
+    """تحليل قيم التواريخ المكتوبة بأساليب مختلفة"""
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
     if isinstance(val, (datetime, datetime.date)):
@@ -76,15 +79,16 @@ def parse_date(val):
                 return datetime.strptime(s_val, fmt)
             except ValueError:
                 pass
-    except:
+    except Exception:
         pass
     return None
 
 
+# --- 3. التطبيق الرئيسي ---
 class CoordinationKivyApp(App):
 
     def build(self):
-        # 1. إذا كان هناك خطأ في التحميل، اعرضه فوراً على الشاشة
+        # في حالة وجود أخطاء استيراد، اعرض الشاشة التوضيحية
         if IMPORT_ERRORS:
             err_box = BoxLayout(orientation="vertical", padding=20)
             msg = "⚠️ تعذر تشغيل التطبيق بسبب نقص المكتبات التالية:\n\n" + "\n".join(IMPORT_ERRORS)
@@ -93,12 +97,15 @@ class CoordinationKivyApp(App):
             err_box.add_widget(err_lbl)
             return err_box
 
-        # 2. تشغيل الواجهة الأساسية
         try:
             return self.create_main_ui()
         except Exception as e:
             err_box = BoxLayout(orientation="vertical", padding=20)
-            err_lbl = Label(text=f"حدث خطأ أثناء بناء الواجهة:\n\n{traceback.format_exc()}", color=(1, 0.3, 0.3, 1), font_size="11sp")
+            err_lbl = Label(
+                text=f"حدث خطأ أثناء بناء الواجهة:\n\n{traceback.format_exc()}",
+                color=(1, 0.3, 0.3, 1),
+                font_size="11sp"
+            )
             err_lbl.bind(size=err_lbl.setter('text_size'))
             err_box.add_widget(err_lbl)
             return err_box
@@ -111,7 +118,7 @@ class CoordinationKivyApp(App):
 
         root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
-        # الترويسة
+        # الترويسة الرئيسية
         title_lbl = Label(
             text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
             font_size="16sp",
@@ -139,7 +146,7 @@ class CoordinationKivyApp(App):
         files_box.add_widget(self.logo_status)
         root.add_widget(files_box)
 
-        # التاريخ والمرحلة
+        # إعدادات التاريخ والمرحلة
         date_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         date_box.add_widget(Label(text=ar("إعدادات التنسيق والسن المستهدف:"), bold=True, size_hint_y=None, height=20))
 
@@ -164,7 +171,7 @@ class CoordinationKivyApp(App):
 
         root.add_widget(date_box)
 
-        # قائمة المدارس
+        # قائمة المدارس الديناميكية
         root.add_widget(Label(text=ar("الكثافات والحد الأدنى للسن لكل مدرسة:"), bold=True, size_hint_y=None, height=25))
 
         self.schools_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
@@ -174,7 +181,7 @@ class CoordinationKivyApp(App):
         scroll_view.add_widget(self.schools_layout)
         root.add_widget(scroll_view)
 
-        # زر التشغيل
+        # أزرار التشغيل وحالة المعالجة
         bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         self.run_btn = Button(
             text=ar("بدء معالجة التنسيق وتوليد التقارير"),
@@ -201,7 +208,7 @@ class CoordinationKivyApp(App):
 
     def open_file_picker(self, file_type):
         content = BoxLayout(orientation="vertical", spacing=10)
-        default_path = "/sdcard/Download" if os.path.exists("/sdcard/Download") else "/sdcard"
+        default_path = "/sdcard/Download" if os.path.exists("/sdcard/Download") else os.path.expanduser("~")
         filechooser = FileChooserListView(path=default_path)
 
         if file_type == "excel":
@@ -293,6 +300,7 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"خطأ في تحميل المدارس: {str(ex)}")
 
     def calculate_exact_ymd(self, dob, calc_date):
+        """حساب السن بالدقة (يوم - شهر - سنة)"""
         dob_dt = parse_date(dob)
         if not dob_dt:
             return "", "", ""
@@ -310,10 +318,11 @@ class CoordinationKivyApp(App):
                 m += 12
                 y -= 1
             return int(y), int(m), int(d)
-        except:
+        except Exception:
             return "", "", ""
 
     def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
+        """توليد تقارير PDF المنسقة لكل مدرسة"""
         try:
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
@@ -325,10 +334,12 @@ class CoordinationKivyApp(App):
             else:
                 pdf.set_font("Helvetica", size=12)
 
+            # ترويسة التقرير
             pdf.cell(190, 10, txt=ar("مديرية التربية و التعليم بأسوان"), ln=True, align="C")
             pdf.cell(190, 8, txt=ar(f"كشف التنسيق لمدرسة: {school_name} - المرحلة {stage_arabic}"), ln=True, align="C")
             pdf.ln(5)
 
+            # رأس الجدول
             pdf.set_font("ArabicFont" if font_to_use else "Helvetica", size=10)
             pdf.cell(15, 8, txt=ar("م"), border=1, align="C")
             pdf.cell(65, 8, txt=ar("اسم الطالب"), border=1, align="C")
@@ -337,6 +348,7 @@ class CoordinationKivyApp(App):
             pdf.cell(40, 8, txt=ar("الملاحظات"), border=1, align="C")
             pdf.ln(8)
 
+            # صفوف الطلاب
             for idx, st in enumerate(students_list, start=1):
                 dob_str = st["dob_dt"].strftime("%Y-%m-%d") if st["dob_dt"] else ""
                 y, m, d = self.calculate_exact_ymd(st["dob_dt"], calc_date)
@@ -351,7 +363,7 @@ class CoordinationKivyApp(App):
 
             pdf.output(pdf_file_path)
         except Exception as e:
-            print(f"PDF error: {e}")
+            print(f"PDF generation error: {e}")
 
     def start_coordination(self, instance):
         year_str = self.year_tf.text
@@ -360,7 +372,7 @@ class CoordinationKivyApp(App):
 
         try:
             calc_date = datetime(int(year_str), int(self.month_tf.text), int(self.day_tf.text))
-        except:
+        except Exception:
             self.status_txt.text = ar("خطأ: يرجى التأكد من تاريخ احتساب السن!")
             return
 
@@ -443,7 +455,7 @@ class CoordinationKivyApp(App):
             try:
                 school_capacities[c_name] = int(cap_tf.text)
                 school_min_ages[c_name] = float(age_tf.text)
-            except:
+            except Exception:
                 school_capacities[c_name] = 45
                 school_min_ages[c_name] = 4.0
             school_last_dob[c_name] = None
@@ -461,6 +473,7 @@ class CoordinationKivyApp(App):
                 if sch_name_str in school_accepted_count:
                     school_accepted_count[sch_name_str] += 1
 
+        # ترتيب الطلاب حسب السن (الأكبر سناً أولاً)
         students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
         for st in students_sorted:
@@ -514,6 +527,7 @@ class CoordinationKivyApp(App):
                 st["out_code"] = 0
                 st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
 
+        # كتابة النتائج في شيت الإكسيل
         for st in students:
             r_idx = st["row_idx"]
             ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
@@ -522,6 +536,7 @@ class CoordinationKivyApp(App):
 
         wb.save(output_file)
 
+        # تجميع الطلاب حسب المدارس لتوليد تقارير PDF
         grouped_students = {}
         for st in students:
             alloc = st["out_name"] or "غير مسكن"
