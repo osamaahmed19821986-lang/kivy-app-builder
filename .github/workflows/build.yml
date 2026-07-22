@@ -39,12 +39,13 @@ jobs:
           if [ ! -f buildozer.spec ]; then
             buildozer init
           fi
-          # تحديث المكتبات ورفع Target API وإضافة أذونات الذاكرة
+          # إجبار إدراج ملفات الخطوط والإكسيل والصور
+          sed -i 's/^#\? \?source.include_exts = .*/source.include_exts = py,png,jpg,kv,atlas,ttf,xlsx/' buildozer.spec
           sed -i 's/^requirements = .*/requirements = python3,kivy,pillow,openpyxl,fpdf2,fonttools,defusedxml,arabic_reshaper,python-bidi/' buildozer.spec
           sed -i 's/^#\? \?android.archs = .*/android.archs = arm64-v8a/' buildozer.spec
           sed -i 's/^#\? \?android.accept_sdk_license = .*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#\? \?android.ndk = .*/android.ndk = 25b/' buildozer.spec
-          sed -i 's/^#\? \?android.api = .*/android.api = 34/' buildozer.spec
+          sed -i 's/^#\? \?android.api = .*/android.api = 33/' buildozer.spec
           sed -i 's/^#\? \?android.minapi = .*/android.minapi = 21/' buildozer.spec
           sed -i 's/^#\? \?android.permissions = .*/android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE/' buildozer.spec
 
