@@ -4,7 +4,7 @@ import calendar
 import traceback
 from datetime import datetime
 
-# --- 1. حارس الإقلاع: فحص المكتبات قبل تشغيل الواجهة ---
+# --- 1. حارس الإقلاع: فحص المكتبات والخط قبل تشغيل الواجهة ---
 IMPORT_ERRORS = []
 
 try:
@@ -27,7 +27,7 @@ try:
 except Exception as e:
     IMPORT_ERRORS.append(f"fpdf2: {e}")
 
-# استيراد مكتبات Kivy بحذر
+# استيراد مكتبات Kivy
 try:
     from kivy.app import App
     from kivy.uix.boxlayout import BoxLayout
@@ -43,13 +43,26 @@ except Exception as e:
     IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
 
-# --- 2. إعداد الخطوط واللغة العربية (الحل النهائي للغة الغريبة) ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FONT_PATH = os.path.join(BASE_DIR, "arial.ttf")
+# --- 2. البحث عن الخط العربي وتثبيته في الأندرويد ---
+def find_font():
+    """البحث عن ملف الخط العربي في كافة المسارات المحتملة على الموبايل"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "arial.ttf"),
+        "arial.ttf",
+        os.path.abspath("arial.ttf"),
+        os.path.join(os.getcwd(), "arial.ttf"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return None
 
-# إجبار Kivy على استبدال خط Roboto بكافة أنماطه بـ arial.ttf
-if os.path.exists(FONT_PATH):
+FONT_PATH = find_font()
+
+if FONT_PATH:
     try:
+        # استبدال كافة أنماط Roboto بملف الخط العربي المعتمد
         LabelBase.register(
             name="Roboto",
             fn_regular=FONT_PATH,
@@ -58,7 +71,9 @@ if os.path.exists(FONT_PATH):
             fn_bolditalic=FONT_PATH
         )
     except Exception as e:
-        print(f"Font Reg Error: {e}")
+        IMPORT_ERRORS.append(f"خطأ في تسجيل الخط: {e}")
+else:
+    IMPORT_ERRORS.append("⚠️ لم يتم العثور على ملف الخط (arial.ttf) داخل مجلد التطبيق!")
 
 def ar(text):
     """دالة ضبط اتجاه وتشكيل الحروف العربية"""
@@ -71,7 +86,6 @@ def ar(text):
         return str(text)
 
 def parse_date(val):
-    """تحليل قيم التواريخ المكتوبة بأساليب مختلفة"""
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
     if isinstance(val, (datetime, datetime.date)):
@@ -94,9 +108,10 @@ def parse_date(val):
 class CoordinationKivyApp(App):
 
     def build(self):
+        # عرض الشاشة التوضيحية بالأخطاء في حال نقص الخط أو المكتبات
         if IMPORT_ERRORS:
             err_box = BoxLayout(orientation="vertical", padding=20)
-            msg = "⚠️ تعذر تشغيل التطبيق بسبب نقص المكتبات التالية:\n\n" + "\n".join(IMPORT_ERRORS)
+            msg = "⚠️ تعذر تشغيل التطبيق بسبب الأخطاء التالية:\n\n" + "\n".join(IMPORT_ERRORS)
             err_lbl = Label(text=msg, color=(1, 0.2, 0.2, 1), font_size="13sp")
             err_lbl.bind(size=err_lbl.setter('text_size'))
             err_box.add_widget(err_lbl)
@@ -305,7 +320,7 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"خطأ في تحميل المدارس: {str(ex)}")
 
     def calculate_exact_ymd(self, dob, calc_date):
-        """حساب السن بتنسيق يوم-شهر-سنة"""
+        """حساب السن بالدقة (يوم-شهر-سنة)"""
         dob_dt = parse_date(dob)
         if not dob_dt:
             return "", "", ""
@@ -327,19 +342,18 @@ class CoordinationKivyApp(App):
             return "", "", ""
 
     def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
-        """توليد تقارير PDF بتنسيق رسمي معتمد"""
+        """توليد تقارير PDF المنسقة لكل مدرسة"""
         try:
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
 
-            font_to_use = FONT_PATH if os.path.exists(FONT_PATH) else None
+            font_to_use = FONT_PATH
             if font_to_use:
                 pdf.add_font("ArabicFont", "", font_to_use)
                 pdf.set_font("ArabicFont", size=14)
             else:
                 pdf.set_font("Helvetica", size=12)
 
-            # ترويسة مديرية التربية والتعليم بأسوان
             pdf.cell(190, 10, txt=ar("مديرية التربية و التعليم بأسوان"), ln=True, align="C")
             pdf.cell(190, 8, txt=ar(f"كشف التنسيق لمدرسة: {school_name} - المرحلة {stage_arabic}"), ln=True, align="C")
             pdf.ln(5)
