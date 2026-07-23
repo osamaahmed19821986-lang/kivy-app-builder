@@ -43,14 +43,20 @@ except Exception as e:
     IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
 
-# --- 2. إعداد الخطوط واللغة العربية (Fix اللغة الغريبة) ---
+# --- 2. إعداد الخطوط واللغة العربية (الحل النهائي للغة الغريبة) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, "arial.ttf")
 
-# حل مشكلة خط الموبايل: استبدال خط Roboto الافتراضي بـ arial.ttf ليشمل كافة عناصر Kivy تلقائياً
+# إجبار Kivy على استبدال خط Roboto بكافة أنماطه بـ arial.ttf
 if os.path.exists(FONT_PATH):
     try:
-        LabelBase.register(name="Roboto", fn_regular=FONT_PATH)
+        LabelBase.register(
+            name="Roboto",
+            fn_regular=FONT_PATH,
+            fn_bold=FONT_PATH,
+            fn_italic=FONT_PATH,
+            fn_bolditalic=FONT_PATH
+        )
     except Exception as e:
         print(f"Font Reg Error: {e}")
 
@@ -65,6 +71,7 @@ def ar(text):
         return str(text)
 
 def parse_date(val):
+    """تحليل قيم التواريخ المكتوبة بأساليب مختلفة"""
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
     if isinstance(val, (datetime, datetime.date)):
@@ -298,6 +305,7 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"خطأ في تحميل المدارس: {str(ex)}")
 
     def calculate_exact_ymd(self, dob, calc_date):
+        """حساب السن بتنسيق يوم-شهر-سنة"""
         dob_dt = parse_date(dob)
         if not dob_dt:
             return "", "", ""
@@ -319,6 +327,7 @@ class CoordinationKivyApp(App):
             return "", "", ""
 
     def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
+        """توليد تقارير PDF بتنسيق رسمي معتمد"""
         try:
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
