@@ -43,14 +43,14 @@ except Exception as e:
     IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
 
-# --- 2. إعداد الخطوط واللغة العربية ---
+# --- 2. إعداد الخطوط واللغة العربية (Fix اللغة الغريبة) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, "arial.ttf")
 
-# تسجيل الخط العربي لواجهة Kivy
+# حل مشكلة خط الموبايل: استبدال خط Roboto الافتراضي بـ arial.ttf ليشمل كافة عناصر Kivy تلقائياً
 if os.path.exists(FONT_PATH):
     try:
-        LabelBase.register(name="CustomArabic", fn_regular=FONT_PATH)
+        LabelBase.register(name="Roboto", fn_regular=FONT_PATH)
     except Exception as e:
         print(f"Font Reg Error: {e}")
 
@@ -65,7 +65,6 @@ def ar(text):
         return str(text)
 
 def parse_date(val):
-    """تحليل قيم التواريخ المكتوبة بأساليب مختلفة"""
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
     if isinstance(val, (datetime, datetime.date)):
@@ -88,7 +87,6 @@ def parse_date(val):
 class CoordinationKivyApp(App):
 
     def build(self):
-        # في حالة وجود أخطاء استيراد، اعرض الشاشة التوضيحية
         if IMPORT_ERRORS:
             err_box = BoxLayout(orientation="vertical", padding=20)
             msg = "⚠️ تعذر تشغيل التطبيق بسبب نقص المكتبات التالية:\n\n" + "\n".join(IMPORT_ERRORS)
@@ -300,7 +298,6 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"خطأ في تحميل المدارس: {str(ex)}")
 
     def calculate_exact_ymd(self, dob, calc_date):
-        """حساب السن بالدقة (يوم - شهر - سنة)"""
         dob_dt = parse_date(dob)
         if not dob_dt:
             return "", "", ""
@@ -322,7 +319,6 @@ class CoordinationKivyApp(App):
             return "", "", ""
 
     def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
-        """توليد تقارير PDF المنسقة لكل مدرسة"""
         try:
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
@@ -334,12 +330,11 @@ class CoordinationKivyApp(App):
             else:
                 pdf.set_font("Helvetica", size=12)
 
-            # ترويسة التقرير
+            # ترويسة مديرية التربية والتعليم بأسوان
             pdf.cell(190, 10, txt=ar("مديرية التربية و التعليم بأسوان"), ln=True, align="C")
             pdf.cell(190, 8, txt=ar(f"كشف التنسيق لمدرسة: {school_name} - المرحلة {stage_arabic}"), ln=True, align="C")
             pdf.ln(5)
 
-            # رأس الجدول
             pdf.set_font("ArabicFont" if font_to_use else "Helvetica", size=10)
             pdf.cell(15, 8, txt=ar("م"), border=1, align="C")
             pdf.cell(65, 8, txt=ar("اسم الطالب"), border=1, align="C")
@@ -348,7 +343,6 @@ class CoordinationKivyApp(App):
             pdf.cell(40, 8, txt=ar("الملاحظات"), border=1, align="C")
             pdf.ln(8)
 
-            # صفوف الطلاب
             for idx, st in enumerate(students_list, start=1):
                 dob_str = st["dob_dt"].strftime("%Y-%m-%d") if st["dob_dt"] else ""
                 y, m, d = self.calculate_exact_ymd(st["dob_dt"], calc_date)
@@ -473,7 +467,6 @@ class CoordinationKivyApp(App):
                 if sch_name_str in school_accepted_count:
                     school_accepted_count[sch_name_str] += 1
 
-        # ترتيب الطلاب حسب السن (الأكبر سناً أولاً)
         students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
         for st in students_sorted:
@@ -527,7 +520,6 @@ class CoordinationKivyApp(App):
                 st["out_code"] = 0
                 st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
 
-        # كتابة النتائج في شيت الإكسيل
         for st in students:
             r_idx = st["row_idx"]
             ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
@@ -536,7 +528,6 @@ class CoordinationKivyApp(App):
 
         wb.save(output_file)
 
-        # تجميع الطلاب حسب المدارس لتوليد تقارير PDF
         grouped_students = {}
         for st in students:
             alloc = st["out_name"] or "غير مسكن"
