@@ -23,7 +23,7 @@ version = 0.2
 requirements = python3,kivy,openpyxl,arabic_reshaper,python-bidi,fpdf2
 
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
-orientation = all
+orientation = sensorPortrait
 
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
