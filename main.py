@@ -4,6 +4,9 @@ import calendar
 import traceback
 from datetime import datetime
 
+# استيراد أداة معرفة بيئة التشغيل من Kivy
+from kivy.utils import platform
+
 # --- 1. حارس الإقلاع: فحص المكتبات والخط قبل تشغيل الواجهة ---
 IMPORT_ERRORS = []
 
@@ -62,7 +65,6 @@ FONT_PATH = find_font()
 
 if FONT_PATH:
     try:
-        # استبدال كافة أنماط Roboto بملف الخط العربي المعتمد
         LabelBase.register(
             name="Roboto",
             fn_regular=FONT_PATH,
@@ -107,8 +109,20 @@ def parse_date(val):
 # --- 3. التطبيق الرئيسي ---
 class CoordinationKivyApp(App):
 
+    def on_start(self):
+        """طلب صلاحيات الوصول للملفات فور فتح التطبيق على الأندرويد"""
+        if platform == 'android':
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([
+                    Permission.READ_EXTERNAL_STORAGE,
+                    Permission.WRITE_EXTERNAL_STORAGE,
+                    Permission.MANAGE_EXTERNAL_STORAGE
+                ])
+            except Exception as e:
+                print(f"Error requesting permissions: {e}")
+
     def build(self):
-        # عرض الشاشة التوضيحية بالأخطاء في حال نقص الخط أو المكتبات
         if IMPORT_ERRORS:
             err_box = BoxLayout(orientation="vertical", padding=20)
             msg = "⚠️ تعذر تشغيل التطبيق بسبب الأخطاء التالية:\n\n" + "\n".join(IMPORT_ERRORS)
@@ -138,7 +152,6 @@ class CoordinationKivyApp(App):
 
         root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
-        # الترويسة الرئيسية
         title_lbl = Label(
             text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
             font_size="16sp",
@@ -149,7 +162,6 @@ class CoordinationKivyApp(App):
         )
         root.add_widget(title_lbl)
 
-        # اختيار الملفات
         files_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=110)
 
         btn_excel = Button(text=ar("اختر ملف الإكسيل الرئيسي (.xlsx)"), size_hint_y=None, height=35)
@@ -166,7 +178,6 @@ class CoordinationKivyApp(App):
         files_box.add_widget(self.logo_status)
         root.add_widget(files_box)
 
-        # إعدادات التاريخ والمرحلة
         date_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         date_box.add_widget(Label(text=ar("إعدادات التنسيق والسن المستهدف:"), bold=True, size_hint_y=None, height=20))
 
@@ -191,7 +202,6 @@ class CoordinationKivyApp(App):
 
         root.add_widget(date_box)
 
-        # قائمة المدارس الديناميكية
         root.add_widget(Label(text=ar("الكثافات والحد الأدنى للسن لكل مدرسة:"), bold=True, size_hint_y=None, height=25))
 
         self.schools_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
@@ -201,7 +211,6 @@ class CoordinationKivyApp(App):
         scroll_view.add_widget(self.schools_layout)
         root.add_widget(scroll_view)
 
-        # أزرار التشغيل وحالة المعالجة
         bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         self.run_btn = Button(
             text=ar("بدء معالجة التنسيق وتوليد التقارير"),
@@ -228,7 +237,15 @@ class CoordinationKivyApp(App):
 
     def open_file_picker(self, file_type):
         content = BoxLayout(orientation="vertical", spacing=10)
-        default_path = "/sdcard/Download" if os.path.exists("/sdcard/Download") else os.path.expanduser("~")
+        
+        # تحديد المسار الافتراضي للأندرويد بشكل أصح
+        if platform == 'android':
+            default_path = "/storage/emulated/0/Download"
+            if not os.path.exists(default_path):
+                default_path = "/sdcard/Download"
+        else:
+            default_path = os.path.expanduser("~")
+
         filechooser = FileChooserListView(path=default_path)
 
         if file_type == "excel":
@@ -320,7 +337,6 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"خطأ في تحميل المدارس: {str(ex)}")
 
     def calculate_exact_ymd(self, dob, calc_date):
-        """حساب السن بالدقة (يوم-شهر-سنة)"""
         dob_dt = parse_date(dob)
         if not dob_dt:
             return "", "", ""
@@ -342,7 +358,6 @@ class CoordinationKivyApp(App):
             return "", "", ""
 
     def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
-        """توليد تقارير PDF المنسقة لكل مدرسة"""
         try:
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
