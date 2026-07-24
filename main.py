@@ -5,7 +5,6 @@ import traceback
 import threading
 from datetime import datetime, date
 
-# استيراد أدوات Kivy والتحكم في النافذة
 from kivy.utils import platform
 from kivy.core.window import Window
 from kivy.clock import Clock
@@ -173,25 +172,25 @@ class CoordinationKivyApp(App):
         self.school_inputs = {}
         self.loading_popup = None
 
-        root = BoxLayout(orientation="vertical", padding=15, spacing=10)
+        root = BoxLayout(orientation="vertical", padding=10, spacing=8)
 
         title_lbl = Label(
             text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
-            font_size="16sp",
+            font_size="15sp",
             bold=True,
             size_hint_y=None,
-            height=35,
+            height=30,
             color=(0.1, 0.2, 0.35, 1)
         )
         root.add_widget(title_lbl)
 
-        files_box = BoxLayout(orientation="vertical", spacing=8, size_hint_y=None, height=170)
+        files_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=150)
 
         btn_excel = Button(
             text=ar("📊 اختر ملف الإكسيل الرئيسي (.xlsx)"),
             size_hint_y=None,
-            height=55,
-            font_size="14sp",
+            height=50,
+            font_size="13sp",
             bold=True,
             background_color=(0.15, 0.55, 0.3, 1)
         )
@@ -202,14 +201,14 @@ class CoordinationKivyApp(App):
             color=(0.4, 0.4, 0.4, 1),
             font_size="11sp",
             size_hint_y=None,
-            height=20
+            height=18
         )
 
         btn_logo = Button(
             text=ar("🖼️ اختر صورة الشعار / اللوجو"),
             size_hint_y=None,
-            height=55,
-            font_size="14sp",
+            height=50,
+            font_size="13sp",
             bold=True,
             background_color=(0.2, 0.45, 0.65, 1)
         )
@@ -220,7 +219,7 @@ class CoordinationKivyApp(App):
             color=(0.4, 0.4, 0.4, 1),
             font_size="11sp",
             size_hint_y=None,
-            height=20
+            height=18
         )
 
         files_box.add_widget(btn_excel)
@@ -230,8 +229,8 @@ class CoordinationKivyApp(App):
         root.add_widget(files_box)
 
         # التاريخ والمرحلة
-        date_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
-        date_box.add_widget(Label(text=ar("إعدادات تاريخ احتساب السن والمرحلة:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=20))
+        date_box = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None, height=75)
+        date_box.add_widget(Label(text=ar("إعدادات تاريخ احتساب السن والمرحلة:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=18, font_size="12sp"))
 
         inputs_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=30)
         self.day_tf = TextInput(text="1", multiline=False, input_filter="int")
@@ -245,7 +244,7 @@ class CoordinationKivyApp(App):
         inputs_grid.add_widget(self.stage_tf)
         date_box.add_widget(inputs_grid)
 
-        labels_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=18)
+        labels_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=16)
         labels_grid.add_widget(Label(text=ar("اليوم"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
         labels_grid.add_widget(Label(text=ar("الشهر"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
         labels_grid.add_widget(Label(text=ar("السنة"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
@@ -254,16 +253,16 @@ class CoordinationKivyApp(App):
 
         root.add_widget(date_box)
 
-        # جدول الكثافات
-        root.add_widget(Label(text=ar("الكثافات والحد الأقصى لتاريخ الميلاد المقبول:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=25))
+        # جدول الكثافات بوزن هيدر متناسق (50% لاسم المدرسة، 20% للكثافة، 30% للتاريخ)
+        root.add_widget(Label(text=ar("الكثافات والحد الأقصى لتاريخ الميلاد المقبول:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=22, font_size="12sp"))
 
         hdr_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=25, spacing=5)
-        hdr_box.add_widget(Label(text=ar("اسم المدرسة"), size_hint_x=0.4, bold=True, color=(0.2, 0.2, 0.2, 1)))
-        hdr_box.add_widget(Label(text=ar("الكثافة"), size_hint_x=0.25, bold=True, color=(0.2, 0.2, 0.2, 1)))
-        hdr_box.add_widget(Label(text=ar("أقصى تاريخ ميلاد"), size_hint_x=0.35, bold=True, color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("اسم المدرسة"), size_hint_x=0.5, bold=True, font_size="11sp", color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("الكثافة"), size_hint_x=0.2, bold=True, font_size="11sp", color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("أقصى تاريخ"), size_hint_x=0.3, bold=True, font_size="11sp", color=(0.2, 0.2, 0.2, 1)))
         root.add_widget(hdr_box)
 
-        self.schools_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
+        self.schools_layout = GridLayout(cols=1, spacing=6, size_hint_y=None)
         self.schools_layout.bind(minimum_height=self.schools_layout.setter("height"))
 
         scroll_view = ScrollView(size_hint=(1, 1))
@@ -271,14 +270,14 @@ class CoordinationKivyApp(App):
         root.add_widget(scroll_view)
 
         # الأزرار السفلية
-        bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
+        bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=75)
         self.run_btn = Button(
             text=ar("🚀 بدء معالجة التنسيق وتوليد التقارير"),
             background_color=(0.07, 0.3, 0.36, 1),
             disabled=True,
             size_hint_y=None,
             height=45,
-            font_size="14sp",
+            font_size="13sp",
             bold=True
         )
         self.run_btn.bind(on_press=self.start_coordination_thread)
@@ -288,7 +287,7 @@ class CoordinationKivyApp(App):
             color=(0.3, 0.3, 0.3, 1),
             font_size="11sp",
             size_hint_y=None,
-            height=30,
+            height=25,
         )
 
         bottom_box.add_widget(self.run_btn)
@@ -353,7 +352,6 @@ class CoordinationKivyApp(App):
             self.schools_layout.clear_widgets()
             self.school_inputs.clear()
 
-            # قراءة سريعة لأسماء المدارس
             wb = openpyxl.load_workbook(self.excel_path, read_only=True, data_only=True)
             school_sheets = [s for s in wb.sheetnames if "المدارس" in s]
             if not school_sheets:
@@ -385,13 +383,22 @@ class CoordinationKivyApp(App):
             unique_schools = sorted(list(unique_schools_set))
 
             for sch_name in unique_schools:
-                row_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=35, spacing=5)
+                # صف يحتوي على اسم المدرسة بعرض أكبر ودعم السطر المتعدد
+                row_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=45, spacing=5)
                 
-                name_lbl = Label(text=ar(sch_name), size_hint_x=0.4, halign="right", color=(0.1, 0.1, 0.1, 1))
-                name_lbl.bind(size=name_lbl.setter("text_size"))
+                name_lbl = Label(
+                    text=ar(sch_name),
+                    size_hint_x=0.5,
+                    halign="right",
+                    valign="middle",
+                    font_size="11sp",
+                    color=(0.1, 0.1, 0.1, 1)
+                )
+                # تلتف الكلمات تلقائياً ولا تُقطع
+                name_lbl.bind(size=lambda instance, value: setattr(instance, 'text_size', (value[0], None)))
 
-                cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.25)
-                age_tf = TextInput(text="2022-10-01", multiline=False, size_hint_x=0.35)
+                cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.2, font_size="11sp")
+                age_tf = TextInput(text="2022-10-01", multiline=False, size_hint_x=0.3, font_size="11sp")
 
                 row_box.add_widget(name_lbl)
                 row_box.add_widget(cap_tf)
@@ -511,7 +518,6 @@ class CoordinationKivyApp(App):
 
             self.update_loading_status("📖 قراءة الملف من الذاكرة (سريع)...")
             
-            # --- قراءة سريعة جداً فائقة السرعة ---
             wb_fast = openpyxl.load_workbook(self.excel_path, read_only=True, data_only=True)
             student_sheets = [s for s in wb_fast.sheetnames if "الطلاب" in s]
             if not student_sheets:
@@ -617,7 +623,6 @@ class CoordinationKivyApp(App):
 
             students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
-            # خوارزمية التنسيق السريعة مع شريط تقدم
             for idx_st, st in enumerate(students_sorted, start=1):
                 if idx_st % 50 == 0:
                     self.update_loading_status(f"⚙️ جاري معالجة الطالب ({idx_st} / {total_st_count})...")
@@ -673,11 +678,9 @@ class CoordinationKivyApp(App):
 
             self.update_loading_status("💾 كتابة النتائج داخل الملف...")
             
-            # فتح الملف للأمر بالحفظ فقط
             wb_write = openpyxl.load_workbook(self.excel_path)
             ws_write = wb_write[student_sheets[0]]
 
-            # التأكد من معرفة أعمدة الكتابة في الملف الأصلي
             headers_write = [cell.value for cell in ws_write[1]]
             
             def get_col_1based(name_fn):
