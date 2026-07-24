@@ -2,7 +2,7 @@ import sys
 import os
 import calendar
 import traceback
-from datetime import datetime
+from datetime import datetime, date
 
 # استيراد أداة معرفة بيئة التشغيل من Kivy
 from kivy.utils import platform
@@ -90,7 +90,7 @@ def ar(text):
 def parse_date(val):
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
-    if isinstance(val, (datetime, datetime.date)):
+    if isinstance(val, (datetime, date)):
         if isinstance(val, datetime):
             return val
         return datetime(val.year, val.month, val.day)
@@ -430,7 +430,6 @@ class CoordinationKivyApp(App):
             print(f"PDF generation error: {e}")
 
     def start_coordination(self, instance):
-        """الدالة المغلفة بالحماية لمنع الخروج المفاجئ"""
         try:
             year_str = self.year_tf.text
             stage_num = int(self.stage_tf.text)
@@ -592,30 +591,30 @@ class CoordinationKivyApp(App):
                             allocated = True
                             break
 
-                if not allocated:
-                    st["out_name"] = "قائمة الانتظار"
-                    st["out_code"] = 0
-                    st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
+            if not allocated:
+                st["out_name"] = "قائمة الانتظار"
+                st["out_code"] = 0
+                st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
 
-            for st in students:
-                r_idx = st["row_idx"]
-                ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
-                ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
-                ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
+        for st in students:
+            r_idx = st["row_idx"]
+            ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
+            ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
+            ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
 
-            wb.save(output_file)
+        wb.save(output_file)
 
-            grouped_students = {}
-            for st in students:
-                alloc = st["out_name"] or "غير مسكن"
-                grouped_students.setdefault(alloc, []).append(st)
+        grouped_students = {}
+        for st in students:
+            alloc = st["out_name"] or "غير مسكن"
+            grouped_students.setdefault(alloc, []).append(st)
 
-            for sch_title, st_list in grouped_students.items():
-                safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
-                pdf_out_path = os.path.join(pdf_folder, safe_filename)
-                self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
+        for sch_title, st_list in grouped_students.items():
+            safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
+            pdf_out_path = os.path.join(pdf_folder, safe_filename)
+            self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
 
-            self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+        self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
 
         except Exception as err:
             err_details = traceback.format_exc()
