@@ -253,7 +253,7 @@ class CoordinationKivyApp(App):
 
         root.add_widget(date_box)
 
-        # جدول الكثافات بوزن هيدر متناسق (50% لاسم المدرسة، 20% للكثافة، 30% للتاريخ)
+        # جدول الكثافات
         root.add_widget(Label(text=ar("الكثافات والحد الأقصى لتاريخ الميلاد المقبول:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=22, font_size="12sp"))
 
         hdr_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=25, spacing=5)
@@ -383,7 +383,6 @@ class CoordinationKivyApp(App):
             unique_schools = sorted(list(unique_schools_set))
 
             for sch_name in unique_schools:
-                # صف يحتوي على اسم المدرسة بعرض أكبر ودعم السطر المتعدد
                 row_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=45, spacing=5)
                 
                 name_lbl = Label(
@@ -394,7 +393,6 @@ class CoordinationKivyApp(App):
                     font_size="11sp",
                     color=(0.1, 0.1, 0.1, 1)
                 )
-                # تلتف الكلمات تلقائياً ولا تُقطع
                 name_lbl.bind(size=lambda instance, value: setattr(instance, 'text_size', (value[0], None)))
 
                 cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.2, font_size="11sp")
@@ -445,16 +443,18 @@ class CoordinationKivyApp(App):
             else:
                 pdf.set_font("Helvetica", size=12)
 
-            pdf.cell(190, 10, txt=ar("مديرية التربية و التعليم بأسوان"), ln=True, align="C")
+            pdf.cell(190, 10, txt=ar("مديرية التربية والتعليم بأسوان"), ln=True, align="C")
             pdf.cell(190, 8, txt=ar(f"كشف التنسيق لمدرسة: {school_name} - المرحلة {stage_arabic}"), ln=True, align="C")
             pdf.ln(5)
 
             pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=10)
-            pdf.cell(15, 8, txt=ar("م"), border=1, align="C")
-            pdf.cell(65, 8, txt=ar("اسم الطالب"), border=1, align="C")
-            pdf.cell(30, 8, txt=ar("تاريخ الميلاد"), border=1, align="C")
-            pdf.cell(40, 8, txt=ar("السن (يوم-شهر-سنة)"), border=1, align="C")
+            
+            # عناوين الجدول من اليمين إلى اليسار
             pdf.cell(40, 8, txt=ar("الملاحظات"), border=1, align="C")
+            pdf.cell(40, 8, txt=ar("السن (يوم-شهر-سنة)"), border=1, align="C")
+            pdf.cell(30, 8, txt=ar("تاريخ الميلاد"), border=1, align="C")
+            pdf.cell(65, 8, txt=ar("اسم الطالب"), border=1, align="C")
+            pdf.cell(15, 8, txt=ar("م"), border=1, align="C")
             pdf.ln(8)
 
             for idx, st in enumerate(students_list, start=1):
@@ -462,11 +462,11 @@ class CoordinationKivyApp(App):
                 y, m, d = self.calculate_exact_ymd(st["dob_dt"], calc_date)
                 age_str = f"{d}-{m}-{y}" if y != "" else ""
 
-                pdf.cell(15, 7, txt=str(idx), border=1, align="C")
-                pdf.cell(65, 7, txt=ar(st["name"]), border=1, align="R")
-                pdf.cell(30, 7, txt=dob_str, border=1, align="C")
-                pdf.cell(40, 7, txt=ar(age_str), border=1, align="C")
                 pdf.cell(40, 7, txt=ar(st["notes"]), border=1, align="R")
+                pdf.cell(40, 7, txt=ar(age_str), border=1, align="C")
+                pdf.cell(30, 7, txt=dob_str, border=1, align="C")
+                pdf.cell(65, 7, txt=ar(st["name"]), border=1, align="R")
+                pdf.cell(15, 7, txt=str(idx), border=1, align="C")
                 pdf.ln(7)
 
             pdf.output(pdf_file_path)
