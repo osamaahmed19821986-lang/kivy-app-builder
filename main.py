@@ -10,16 +10,16 @@ from kivy.utils import platform
 from kivy.core.window import Window
 from kivy.clock import Clock
 
-# --- ضبط لون خلفية الشاشة (رمادي فاتح هادئ) ---
+# --- ضبط لون خلفية الشاشة ---
 Window.clearcolor = (0.93, 0.94, 0.96, 1)
 
-# --- 1. حارس الإقلاع: فحص المكتبات والخط قبل تشغيل الواجهة ---
+# --- 1. حارس الإقلاع: فحص المكتبات والخط ---
 IMPORT_ERRORS = []
 
 try:
     import openpyxl
 except Exception as e:
-    IMPORT_ERRORS.append(f"openpyxl / et_xmlfile: {e}")
+    IMPORT_ERRORS.append(f"openpyxl: {e}")
 
 try:
     import arabic_reshaper
@@ -36,7 +36,6 @@ try:
 except Exception as e:
     IMPORT_ERRORS.append(f"fpdf2: {e}")
 
-# استيراد عناصر Kivy
 try:
     from kivy.app import App
     from kivy.uix.boxlayout import BoxLayout
@@ -52,7 +51,7 @@ except Exception as e:
     IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
 
-# --- 2. البحث عن الخط العربي وتثبيته ---
+# --- 2. البحث عن الخط العربي وتسجيله ---
 def find_font():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -80,10 +79,10 @@ if FONT_PATH:
     except Exception as e:
         IMPORT_ERRORS.append(f"خطأ في تسجيل الخط: {e}")
 else:
-    IMPORT_ERRORS.append("⚠️ لم يتم العثور على ملف الخط (arial.ttf) داخل مجلد التطبيق!")
+    IMPORT_ERRORS.append("⚠️ لم يتم العثور على ملف الخط (arial.ttf)!")
 
 def ar(text):
-    """دالة ضبط اتجاه وتشكيل الحروف العربية"""
+    """ضبط اتجاه النص العربي"""
     if text is None or text == "" or str(text).strip().lower() == "nan":
         return ""
     try:
@@ -93,7 +92,7 @@ def ar(text):
         return str(text)
 
 def parse_date(val):
-    """دالة تحويل النص أو الكائن إلى تاريخ بشكل آمن"""
+    """تحويل القيم لتاريخ بشكل سريع وآمن"""
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
     if isinstance(val, (datetime, date)):
@@ -116,7 +115,7 @@ def parse_date(val):
 class CoordinationKivyApp(App):
 
     def on_start(self):
-        """طلب صلاحيات الوصول للملفات مع دعم أندرويد 14"""
+        """طلب صلاحيات الوصول للملفات في أندرويد"""
         if platform == 'android':
             try:
                 from android.permissions import request_permissions, Permission
@@ -144,7 +143,6 @@ class CoordinationKivyApp(App):
                 print(f"Error requesting permissions: {e}")
 
     def show_error_popup(self, title_text, err_text):
-        """دالة إظهار النوافذ المنبثقة عند حدوث أي أخطاء"""
         content = BoxLayout(orientation="vertical", padding=10, spacing=10)
         lbl = Label(text=ar(err_text), size_hint_y=0.8, color=(1, 0.3, 0.3, 1))
         lbl.bind(size=lbl.setter('text_size'))
@@ -166,18 +164,7 @@ class CoordinationKivyApp(App):
             err_box.add_widget(err_lbl)
             return err_box
 
-        try:
-            return self.create_main_ui()
-        except Exception as e:
-            err_box = BoxLayout(orientation="vertical", padding=20)
-            err_lbl = Label(
-                text=f"حدث خطأ أثناء بناء الواجهة:\n\n{traceback.format_exc()}",
-                color=(1, 0.3, 0.3, 1),
-                font_size="11sp"
-            )
-            err_lbl.bind(size=err_lbl.setter('text_size'))
-            err_box.add_widget(err_lbl)
-            return err_box
+        return self.create_main_ui()
 
     def create_main_ui(self):
         self.title = "منظومة تنسيق رياض الأطفال"
@@ -188,7 +175,6 @@ class CoordinationKivyApp(App):
 
         root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
-        # عنوان التطبيق الرئيسي
         title_lbl = Label(
             text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
             font_size="16sp",
@@ -199,7 +185,6 @@ class CoordinationKivyApp(App):
         )
         root.add_widget(title_lbl)
 
-        # --- أزرار اختيار الملفات (كبيرة ومميزة بالألوان) ---
         files_box = BoxLayout(orientation="vertical", spacing=8, size_hint_y=None, height=170)
 
         btn_excel = Button(
@@ -244,7 +229,7 @@ class CoordinationKivyApp(App):
         files_box.add_widget(self.logo_status)
         root.add_widget(files_box)
 
-        # إعدادات التنسيق وتاريخ الاحتساب
+        # التاريخ والمرحلة
         date_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         date_box.add_widget(Label(text=ar("إعدادات تاريخ احتساب السن والمرحلة:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=20))
 
@@ -269,7 +254,7 @@ class CoordinationKivyApp(App):
 
         root.add_widget(date_box)
 
-        # عناوين جدول المدارس
+        # جدول الكثافات
         root.add_widget(Label(text=ar("الكثافات والحد الأقصى لتاريخ الميلاد المقبول:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=25))
 
         hdr_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=25, spacing=5)
@@ -285,7 +270,7 @@ class CoordinationKivyApp(App):
         scroll_view.add_widget(self.schools_layout)
         root.add_widget(scroll_view)
 
-        # زر التشغيل
+        # الأزرار السفلية
         bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         self.run_btn = Button(
             text=ar("🚀 بدء معالجة التنسيق وتوليد التقارير"),
@@ -315,12 +300,9 @@ class CoordinationKivyApp(App):
     def open_file_picker(self, file_type):
         content = BoxLayout(orientation="vertical", spacing=10)
         
-        if platform == 'android':
-            default_path = "/storage/emulated/0/Download"
-            if not os.path.exists(default_path):
-                default_path = "/sdcard/Download"
-        else:
-            default_path = os.path.expanduser("~")
+        default_path = "/storage/emulated/0/Download" if platform == 'android' else os.path.expanduser("~")
+        if platform == 'android' and not os.path.exists(default_path):
+            default_path = "/sdcard/Download"
 
         filechooser = FileChooserListView(path=default_path)
 
@@ -371,27 +353,34 @@ class CoordinationKivyApp(App):
             self.schools_layout.clear_widgets()
             self.school_inputs.clear()
 
-            wb = openpyxl.load_workbook(self.excel_path, data_only=True)
+            # قراءة سريعة لأسماء المدارس
+            wb = openpyxl.load_workbook(self.excel_path, read_only=True, data_only=True)
             school_sheets = [s for s in wb.sheetnames if "المدارس" in s]
             if not school_sheets:
-                self.show_error_popup("خطأ في ملف الإكسيل", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'المدارس'")
+                self.show_error_popup("خطأ في الملف", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'المدارس'")
+                wb.close()
                 return
             
             ws_schools = wb[school_sheets[0]]
+            rows = list(ws_schools.iter_rows(values_only=True))
+            wb.close()
 
-            headers = [cell.value for cell in ws_schools[1]]
+            if not rows:
+                return
+
+            headers = [str(h) if h is not None else "" for h in rows[0]]
             col_school_title_idx = None
             for idx, h in enumerate(headers):
-                if h and "اسم المدرسة" in str(h):
-                    col_school_title_idx = idx + 1
+                if "اسم المدرسة" in h:
+                    col_school_title_idx = idx
                     break
 
             unique_schools_set = set()
-            for r in range(2, ws_schools.max_row + 1):
-                val = ws_schools.cell(row=r, column=col_school_title_idx).value if col_school_title_idx else None
-                cleaned = self.clean_school_name(val)
-                if cleaned:
-                    unique_schools_set.add(cleaned)
+            for r in rows[1:]:
+                if col_school_title_idx is not None and col_school_title_idx < len(r):
+                    cleaned = self.clean_school_name(r[col_school_title_idx])
+                    if cleaned:
+                        unique_schools_set.add(cleaned)
 
             unique_schools = sorted(list(unique_schools_set))
 
@@ -443,9 +432,8 @@ class CoordinationKivyApp(App):
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
 
-            font_to_use = FONT_PATH
-            if font_to_use:
-                pdf.add_font("ArabicFont", "", font_to_use)
+            if FONT_PATH:
+                pdf.add_font("ArabicFont", "", FONT_PATH)
                 pdf.set_font("ArabicFont", size=14)
             else:
                 pdf.set_font("Helvetica", size=12)
@@ -454,7 +442,7 @@ class CoordinationKivyApp(App):
             pdf.cell(190, 8, txt=ar(f"كشف التنسيق لمدرسة: {school_name} - المرحلة {stage_arabic}"), ln=True, align="C")
             pdf.ln(5)
 
-            pdf.set_font("ArabicFont" if font_to_use else "Helvetica", size=10)
+            pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=10)
             pdf.cell(15, 8, txt=ar("م"), border=1, align="C")
             pdf.cell(65, 8, txt=ar("اسم الطالب"), border=1, align="C")
             pdf.cell(30, 8, txt=ar("تاريخ الميلاد"), border=1, align="C")
@@ -478,15 +466,12 @@ class CoordinationKivyApp(App):
         except Exception as e:
             print(f"PDF generation error: {e}")
 
-    # --- إدارة خيط المعالجة وإبراز التحميل ---
     def start_coordination_thread(self, instance):
-        """بدء عملية التنسيق في خيط منفصل وإظهار نافذة التحميل فوراً"""
         self.run_btn.disabled = True
         
-        # إنشاء نافذة التحميل المنبثقة
         content = BoxLayout(orientation="vertical", padding=15, spacing=10)
         self.loading_label = Label(
-            text=ar("⏳ جاري الفرز والتسكين وتوليد التقارير...\nيرجى الانتظار عدم إغلاق التطبيق"),
+            text=ar("⏳ جاري بدء معالجة الملف..."),
             halign="center",
             color=(0.1, 0.6, 0.8, 1),
             font_size="13sp"
@@ -497,20 +482,17 @@ class CoordinationKivyApp(App):
         self.loading_popup = Popup(
             title=ar("جاري معالجة البيانات"),
             content=content,
-            size_hint=(0.8, 0.3),
+            size_hint=(0.85, 0.35),
             auto_dismiss=False
         )
         self.loading_popup.open()
 
-        # تشغيل الدالة في خيط فرعي حتى لا تتجمد واجهة المستخدم
         threading.Thread(target=self.run_coordination_process, daemon=True).start()
 
     def update_loading_status(self, text):
-        """تحديث نص نافذة التحميل بطريقة آمنة للخيوط"""
         Clock.schedule_once(lambda dt: setattr(self.loading_label, 'text', ar(text)))
 
     def run_coordination_process(self):
-        """دالة المعالجة الفعلية التي تعمل في الخلفية"""
         try:
             year_str = self.year_tf.text
             stage_num = int(self.stage_tf.text)
@@ -519,7 +501,7 @@ class CoordinationKivyApp(App):
             try:
                 calc_date = datetime(int(year_str), int(self.month_tf.text), int(self.day_tf.text))
             except Exception:
-                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("تاريخ غير صحيح", "يرجى التأكد من كتابة تاريخ احتساب السن بشكل صحيح."))
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("تاريخ غير صحيح", "يرجى كتابة التاريخ بشكل صحيح."))
                 return
 
             output_dir = os.path.dirname(self.excel_path)
@@ -527,75 +509,80 @@ class CoordinationKivyApp(App):
             pdf_folder = os.path.join(output_dir, f"كشوف_المدارس_المرحلة_{stage_arabic}_PDF")
             os.makedirs(pdf_folder, exist_ok=True)
 
-            self.update_loading_status("📖 جاري قراءة وتحليل ملف الإكسيل...")
-            wb = openpyxl.load_workbook(self.excel_path)
+            self.update_loading_status("📖 قراءة الملف من الذاكرة (سريع)...")
             
-            student_sheets = [s for s in wb.sheetnames if "الطلاب" in s]
+            # --- قراءة سريعة جداً فائقة السرعة ---
+            wb_fast = openpyxl.load_workbook(self.excel_path, read_only=True, data_only=True)
+            student_sheets = [s for s in wb_fast.sheetnames if "الطلاب" in s]
             if not student_sheets:
-                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("خطأ في ملف الإكسيل", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'الطلاب'"))
+                wb_fast.close()
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("خطأ في الملف", "لم يتم العثور على ورقة 'الطلاب'"))
                 return
             
-            ws_students = wb[student_sheets[0]]
+            ws_fast = wb_fast[student_sheets[0]]
+            all_rows = list(ws_fast.iter_rows(values_only=True))
+            wb_fast.close()
 
-            headers = [cell.value for cell in ws_students[1]]
-            headers_str = [str(h) if h is not None else "" for h in headers]
+            if not all_rows or len(all_rows) < 2:
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("تنبيه", "ورقة الطلاب فارغة!"))
+                return
 
-            def find_col_idx(condition_fn, default=None):
-                for idx, h in enumerate(headers_str):
+            headers = [str(h) if h is not None else "" for h in all_rows[0]]
+
+            def find_col(condition_fn, default=None):
+                for idx, h in enumerate(headers):
                     if condition_fn(h):
-                        return idx + 1
+                        return idx
                 return default
 
-            col_dob_idx = find_col_idx(lambda h: "تاريخ الميلاد" in h)
-            col_student_name_idx = find_col_idx(lambda h: "اسم الطالب" in h or ("الاسم" in h and "المدرسة" not in h), default=2)
+            col_dob_idx = find_col(lambda h: "تاريخ الميلاد" in h)
+            col_student_name_idx = find_col(lambda h: "اسم الطالب" in h or ("الاسم" in h and "المدرسة" not in h), default=1)
 
-            col_r1_name_idx = find_col_idx(lambda h: "رغبة (1)اسم" in h)
-            col_r1_code_idx = find_col_idx(lambda h: "رغبة (1)م" in h)
-            col_r2_name_idx = find_col_idx(lambda h: "رغبة (2)اسم" in h)
-            col_r2_code_idx = find_col_idx(lambda h: "رغبة (2)م" in h)
-            col_r3_name_idx = find_col_idx(lambda h: "رغبة (3)اسم" in h)
-            col_r3_code_idx = find_col_idx(lambda h: "رغبة (3)م" in h)
-            col_r4_name_idx = find_col_idx(lambda h: "المدرسة المتميزة" in h and "كود" not in h)
-            col_r4_code_idx = find_col_idx(lambda h: "كود المدرسة المتميزة" in h)
+            col_r1_name_idx = find_col(lambda h: "رغبة (1)اسم" in h)
+            col_r1_code_idx = find_col(lambda h: "رغبة (1)م" in h)
+            col_r2_name_idx = find_col(lambda h: "رغبة (2)اسم" in h)
+            col_r2_code_idx = find_col(lambda h: "رغبة (2)م" in h)
+            col_r3_name_idx = find_col(lambda h: "رغبة (3)اسم" in h)
+            col_r3_code_idx = find_col(lambda h: "رغبة (3)م" in h)
+            col_r4_name_idx = find_col(lambda h: "المدرسة المتميزة" in h and "كود" not in h)
+            col_r4_code_idx = find_col(lambda h: "كود المدرسة المتميزة" in h)
 
-            col_out_name_idx = find_col_idx(lambda h: "اسم" in h and "التسكين" in h)
-            col_out_code_idx = find_col_idx(lambda h: "كود" in h and "التسكين" in h)
-
-            col_notes_idx = find_col_idx(lambda h: "الملاحظات" in h)
-            if not col_notes_idx:
-                col_notes_idx = len(headers) + 1
-                ws_students.cell(row=1, column=col_notes_idx, value="الملاحظات")
+            col_out_name_idx = find_col(lambda h: "اسم" in h and "التسكين" in h)
+            col_out_code_idx = find_col(lambda h: "كود" in h and "التسكين" in h)
+            col_notes_idx = find_col(lambda h: "الملاحظات" in h)
 
             students = []
-            for r_idx in range(2, ws_students.max_row + 1):
-                def get_val(col_idx):
-                    if col_idx and col_idx <= ws_students.max_column:
-                        return ws_students.cell(row=r_idx, column=col_idx).value
+            for r_idx, row_vals in enumerate(all_rows[1:], start=2):
+                def get_v(idx):
+                    if idx is not None and idx < len(row_vals):
+                        return row_vals[idx]
                     return None
 
-                dob_val = get_val(col_dob_idx)
+                dob_val = get_v(col_dob_idx)
                 dob_dt = parse_date(dob_val)
 
                 st = {
                     "row_idx": r_idx,
-                    "name": get_val(col_student_name_idx),
+                    "name": get_v(col_student_name_idx),
                     "dob_val": dob_val,
                     "dob_dt": dob_dt,
-                    "r1_name": get_val(col_r1_name_idx),
-                    "r1_code": get_val(col_r1_code_idx),
-                    "r2_name": get_val(col_r2_name_idx),
-                    "r2_code": get_val(col_r2_code_idx),
-                    "r3_name": get_val(col_r3_name_idx),
-                    "r3_code": get_val(col_r3_code_idx),
-                    "r4_name": get_val(col_r4_name_idx),
-                    "r4_code": get_val(col_r4_code_idx),
-                    "out_name": str(get_val(col_out_name_idx) or "").strip(),
-                    "out_code": get_val(col_out_code_idx),
-                    "notes": "" if stage_num == 1 else (get_val(col_notes_idx) or ""),
+                    "r1_name": get_v(col_r1_name_idx),
+                    "r1_code": get_v(col_r1_code_idx),
+                    "r2_name": get_v(col_r2_name_idx),
+                    "r2_code": get_v(col_r2_code_idx),
+                    "r3_name": get_v(col_r3_name_idx),
+                    "r3_code": get_v(col_r3_code_idx),
+                    "r4_name": get_v(col_r4_name_idx),
+                    "r4_code": get_v(col_r4_code_idx),
+                    "out_name": str(get_v(col_out_name_idx) or "").strip(),
+                    "out_code": get_v(col_out_code_idx),
+                    "notes": "" if stage_num == 1 else (get_v(col_notes_idx) or ""),
                 }
                 students.append(st)
 
-            self.update_loading_status("🔄 جاري تطبيق القواعد وتسكين الطلاب...")
+            total_st_count = len(students)
+            self.update_loading_status(f"🔄 جاري تسكين عدد ({total_st_count}) طالب...")
+
             school_capacities = {}
             school_min_dobs = {}
             school_last_dob = {}
@@ -630,7 +617,11 @@ class CoordinationKivyApp(App):
 
             students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
-            for st in students_sorted:
+            # خوارزمية التنسيق السريعة مع شريط تقدم
+            for idx_st, st in enumerate(students_sorted, start=1):
+                if idx_st % 50 == 0:
+                    self.update_loading_status(f"⚙️ جاري معالجة الطالب ({idx_st} / {total_st_count})...")
+
                 curr_alloc = st["out_name"]
                 if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
                     continue
@@ -680,16 +671,39 @@ class CoordinationKivyApp(App):
                     st["out_code"] = 0
                     st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
 
-            self.update_loading_status("💾 جاري كتابة وحفظ ملف الإكسيل...")
+            self.update_loading_status("💾 كتابة النتائج داخل الملف...")
+            
+            # فتح الملف للأمر بالحفظ فقط
+            wb_write = openpyxl.load_workbook(self.excel_path)
+            ws_write = wb_write[student_sheets[0]]
+
+            # التأكد من معرفة أعمدة الكتابة في الملف الأصلي
+            headers_write = [cell.value for cell in ws_write[1]]
+            
+            def get_col_1based(name_fn):
+                for i, h in enumerate(headers_write):
+                    if h and name_fn(str(h)):
+                        return i + 1
+                return None
+
+            c_out_n = get_col_1based(lambda h: "اسم" in h and "التسكين" in h)
+            c_out_c = get_col_1based(lambda h: "كود" in h and "التسكين" in h)
+            c_notes = get_col_1based(lambda h: "الملاحظات" in h)
+            
+            if not c_notes:
+                c_notes = len(headers_write) + 1
+                ws_write.cell(row=1, column=c_notes, value="الملاحظات")
+
             for st in students:
                 r_idx = st["row_idx"]
-                ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
-                ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
-                ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
+                if c_out_n: ws_write.cell(row=r_idx, column=c_out_n, value=st["out_name"])
+                if c_out_c: ws_write.cell(row=r_idx, column=c_out_c, value=st["out_code"])
+                ws_write.cell(row=r_idx, column=c_notes, value=st["notes"])
 
-            wb.save(output_file)
+            wb_write.save(output_file)
+            wb_write.close()
 
-            self.update_loading_status("📄 جاري توليد كشوف المدارس بصيغة PDF...")
+            self.update_loading_status("📄 جاري توليد كشوف الـ PDF...")
             grouped_students = {}
             for st in students:
                 alloc = st["out_name"] or "غير مسكن"
@@ -707,14 +721,12 @@ class CoordinationKivyApp(App):
             Clock.schedule_once(lambda dt: self.finish_coordination_with_error("حدث خطأ أثناء التنسيق", f"تفاصيل الخطأ:\n{str(err)}\n\n{err_details}"))
 
     def finish_coordination_success(self, pdf_folder):
-        """إنهاء العملية بنجاح وإغلاق مؤشر التحميل"""
         if self.loading_popup:
             self.loading_popup.dismiss()
         self.run_btn.disabled = False
-        self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+        self.status_txt.text = ar(f"✅ تم الانتهاء بنجاح وحفظ ملفات PDF في:\n{pdf_folder}")
 
     def finish_coordination_with_error(self, title, err_msg):
-        """إنهاء العملية بسبب خطأ وإظهار نافذة الخطأ"""
         if self.loading_popup:
             self.loading_popup.dismiss()
         self.run_btn.disabled = False
