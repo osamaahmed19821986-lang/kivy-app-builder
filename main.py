@@ -65,7 +65,6 @@ FONT_PATH = find_font()
 
 if FONT_PATH:
     try:
-        # استبدال كافة أنماط Roboto بملف الخط العربي المعتمد
         LabelBase.register(
             name="Roboto",
             fn_regular=FONT_PATH,
@@ -118,12 +117,8 @@ class CoordinationKivyApp(App):
                 from android import api_version
                 from jnius import autoclass
 
-                # إذا كان الجهاز يعمل بنظام أندرويد 13 أو 14 (API 33+)
                 if api_version >= 33:
-                    # طلب صلاحية اختيار الصور والوسائط للوجو
                     request_permissions([Permission.READ_MEDIA_IMAGES])
-                    
-                    # التحقق من صلاحية إدارة جميع الملفات لقراءة وحفظ الإكسيل والـ PDF
                     Environment = autoclass('android.os.Environment')
                     if not Environment.isExternalStorageManager():
                         Intent = autoclass('android.content.Intent')
@@ -131,12 +126,10 @@ class CoordinationKivyApp(App):
                         Uri = autoclass('android.net.Uri')
                         activity = autoclass('org.kivy.android.PythonActivity').mActivity
                         
-                        # توجيه المستخدم لشاشة الإعدادات لمنح الصلاحية للتطبيق تلقائياً
                         intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                         intent.setData(Uri.parse(f"package:{activity.getPackageName()}"))
                         activity.startActivity(intent)
                 else:
-                    # لأجهزة أندرويد 12 وما دون
                     request_permissions([
                         Permission.READ_EXTERNAL_STORAGE,
                         Permission.WRITE_EXTERNAL_STORAGE
@@ -144,8 +137,21 @@ class CoordinationKivyApp(App):
             except Exception as e:
                 print(f"Error requesting permissions: {e}")
 
+    def show_error_popup(self, title_text, err_text):
+        """دالة إظهار النوافذ المنبثقة عند حدوث أي أخطاء ومنع إغلاق التطبيق"""
+        content = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        lbl = Label(text=ar(err_text), size_hint_y=0.8, color=(1, 0.3, 0.3, 1))
+        lbl.bind(size=lbl.setter('text_size'))
+        btn = Button(text=ar("إغلاق"), size_hint_y=0.2)
+        
+        content.add_widget(lbl)
+        content.add_widget(btn)
+        
+        popup = Popup(title=ar(title_text), content=content, size_hint=(0.9, 0.6))
+        btn.bind(on_press=popup.dismiss)
+        popup.open()
+
     def build(self):
-        # عرض الشاشة التوضيحية بالأخطاء في حال نقص الخط أو المكتبات
         if IMPORT_ERRORS:
             err_box = BoxLayout(orientation="vertical", padding=20)
             msg = "⚠️ تعذر تشغيل التطبيق بسبب الأخطاء التالية:\n\n" + "\n".join(IMPORT_ERRORS)
@@ -175,7 +181,6 @@ class CoordinationKivyApp(App):
 
         root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
-        # الترويسة الرئيسية
         title_lbl = Label(
             text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
             font_size="16sp",
@@ -186,7 +191,6 @@ class CoordinationKivyApp(App):
         )
         root.add_widget(title_lbl)
 
-        # اختيار الملفات
         files_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=110)
 
         btn_excel = Button(text=ar("اختر ملف الإكسيل الرئيسي (.xlsx)"), size_hint_y=None, height=35)
@@ -203,7 +207,6 @@ class CoordinationKivyApp(App):
         files_box.add_widget(self.logo_status)
         root.add_widget(files_box)
 
-        # إعدادات التاريخ والمرحلة
         date_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         date_box.add_widget(Label(text=ar("إعدادات التنسيق والسن المستهدف:"), bold=True, size_hint_y=None, height=20))
 
@@ -228,7 +231,6 @@ class CoordinationKivyApp(App):
 
         root.add_widget(date_box)
 
-        # قائمة المدارس الديناميكية
         root.add_widget(Label(text=ar("الكثافات والحد الأدنى للسن لكل مدرسة:"), bold=True, size_hint_y=None, height=25))
 
         self.schools_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
@@ -238,7 +240,6 @@ class CoordinationKivyApp(App):
         scroll_view.add_widget(self.schools_layout)
         root.add_widget(scroll_view)
 
-        # أزرار التشغيل وحالة المعالجة
         bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         self.run_btn = Button(
             text=ar("بدء معالجة التنسيق وتوليد التقارير"),
@@ -266,7 +267,6 @@ class CoordinationKivyApp(App):
     def open_file_picker(self, file_type):
         content = BoxLayout(orientation="vertical", spacing=10)
         
-        # تحديد المسار الافتراضي للأندرويد
         if platform == 'android':
             default_path = "/storage/emulated/0/Download"
             if not os.path.exists(default_path):
@@ -324,8 +324,12 @@ class CoordinationKivyApp(App):
             self.school_inputs.clear()
 
             wb = openpyxl.load_workbook(self.excel_path, data_only=True)
-            sheet_schools_name = [s for s in wb.sheetnames if "المدارس" in s][0]
-            ws_schools = wb[sheet_schools_name]
+            school_sheets = [s for s in wb.sheetnames if "المدارس" in s]
+            if not school_sheets:
+                self.show_error_popup("خطأ في ملف الإكسيل", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'المدارس'")
+                return
+            
+            ws_schools = wb[school_sheets[0]]
 
             headers = [cell.value for cell in ws_schools[1]]
             col_school_title_idx = None
@@ -362,10 +366,9 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"تم تحميل عدد ({len(unique_schools)}) مدرسة بنجاح.")
 
         except Exception as ex:
-            self.status_txt.text = ar(f"خطأ في تحميل المدارس: {str(ex)}")
+            self.show_error_popup("خطأ تحمبل المدارس", str(ex))
 
     def calculate_exact_ymd(self, dob, calc_date):
-        """حساب السن بالدقة (يوم-شهر-سنة)"""
         dob_dt = parse_date(dob)
         if not dob_dt:
             return "", "", ""
@@ -387,7 +390,6 @@ class CoordinationKivyApp(App):
             return "", "", ""
 
     def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
-        """توليد تقارير PDF المنسقة لكل مدرسة"""
         try:
             pdf = FPDF(orientation="P", unit="mm", format="A4")
             pdf.add_page()
@@ -428,185 +430,196 @@ class CoordinationKivyApp(App):
             print(f"PDF generation error: {e}")
 
     def start_coordination(self, instance):
-        year_str = self.year_tf.text
-        stage_num = int(self.stage_tf.text)
-        stage_arabic = self.get_stage_arabic(stage_num)
-
+        """الدالة المغلفة بالحماية لمنع الخروج المفاجئ"""
         try:
-            calc_date = datetime(int(year_str), int(self.month_tf.text), int(self.day_tf.text))
-        except Exception:
-            self.status_txt.text = ar("خطأ: يرجى التأكد من تاريخ احتساب السن!")
-            return
+            year_str = self.year_tf.text
+            stage_num = int(self.stage_tf.text)
+            stage_arabic = self.get_stage_arabic(stage_num)
 
-        self.status_txt.text = ar(f"جاري الفرز والتسكين لطلاب المرحلة {stage_arabic}...")
-
-        output_dir = os.path.dirname(self.excel_path)
-        output_file = os.path.join(output_dir, f"منظومة_التنسيق_المرحلة_{stage_arabic}.xlsx")
-        pdf_folder = os.path.join(output_dir, f"كشوف_المدارس_المرحلة_{stage_arabic}_PDF")
-        os.makedirs(pdf_folder, exist_ok=True)
-
-        wb = openpyxl.load_workbook(self.excel_path)
-        sheet_students_name = [s for s in wb.sheetnames if "الطلاب" in s][0]
-        ws_students = wb[sheet_students_name]
-
-        headers = [cell.value for cell in ws_students[1]]
-        headers_str = [str(h) if h is not None else "" for h in headers]
-
-        def find_col_idx(condition_fn, default=None):
-            for idx, h in enumerate(headers_str):
-                if condition_fn(h):
-                    return idx + 1
-            return default
-
-        col_dob_idx = find_col_idx(lambda h: "تاريخ الميلاد" in h)
-        col_student_name_idx = find_col_idx(lambda h: "اسم الطالب" in h or ("الاسم" in h and "المدرسة" not in h), default=2)
-
-        col_r1_name_idx = find_col_idx(lambda h: "رغبة (1)اسم" in h)
-        col_r1_code_idx = find_col_idx(lambda h: "رغبة (1)م" in h)
-        col_r2_name_idx = find_col_idx(lambda h: "رغبة (2)اسم" in h)
-        col_r2_code_idx = find_col_idx(lambda h: "رغبة (2)م" in h)
-        col_r3_name_idx = find_col_idx(lambda h: "رغبة (3)اسم" in h)
-        col_r3_code_idx = find_col_idx(lambda h: "رغبة (3)م" in h)
-        col_r4_name_idx = find_col_idx(lambda h: "المدرسة المتميزة" in h and "كود" not in h)
-        col_r4_code_idx = find_col_idx(lambda h: "كود المدرسة المتميزة" in h)
-
-        col_out_name_idx = find_col_idx(lambda h: "اسم" in h and "التسكين" in h)
-        col_out_code_idx = find_col_idx(lambda h: "كود" in h and "التسكين" in h)
-
-        col_notes_idx = find_col_idx(lambda h: "الملاحظات" in h)
-        if not col_notes_idx:
-            col_notes_idx = len(headers) + 1
-            ws_students.cell(row=1, column=col_notes_idx, value="الملاحظات")
-
-        students = []
-        for r_idx in range(2, ws_students.max_row + 1):
-            def get_val(col_idx):
-                if col_idx and col_idx <= ws_students.max_column:
-                    return ws_students.cell(row=r_idx, column=col_idx).value
-                return None
-
-            dob_val = get_val(col_dob_idx)
-            dob_dt = parse_date(dob_val)
-
-            st = {
-                "row_idx": r_idx,
-                "name": get_val(col_student_name_idx),
-                "dob_val": dob_val,
-                "dob_dt": dob_dt,
-                "r1_name": get_val(col_r1_name_idx),
-                "r1_code": get_val(col_r1_code_idx),
-                "r2_name": get_val(col_r2_name_idx),
-                "r2_code": get_val(col_r2_code_idx),
-                "r3_name": get_val(col_r3_name_idx),
-                "r3_code": get_val(col_r3_code_idx),
-                "r4_name": get_val(col_r4_name_idx),
-                "r4_code": get_val(col_r4_code_idx),
-                "out_name": str(get_val(col_out_name_idx) or "").strip(),
-                "out_code": get_val(col_out_code_idx),
-                "notes": "" if stage_num == 1 else (get_val(col_notes_idx) or ""),
-            }
-            students.append(st)
-
-        school_capacities = {}
-        school_min_ages = {}
-        school_last_dob = {}
-        school_accepted_count = {}
-
-        for sch_name, (cap_tf, age_tf) in self.school_inputs.items():
-            c_name = self.clean_school_name(sch_name)
             try:
-                school_capacities[c_name] = int(cap_tf.text)
-                school_min_ages[c_name] = float(age_tf.text)
+                calc_date = datetime(int(year_str), int(self.month_tf.text), int(self.day_tf.text))
             except Exception:
-                school_capacities[c_name] = 45
-                school_min_ages[c_name] = 4.0
-            school_last_dob[c_name] = None
-            school_accepted_count[c_name] = 0
+                self.show_error_popup("تاريخ غير صحيح", "يرجى التأكد من كتابة تاريخ احتساب السن بشكل صحيح.")
+                return
 
-            if stage_num > 1:
-                alloc_dobs = [s["dob_dt"] for s in students if self.clean_school_name(s["out_name"]) == c_name and s["dob_dt"] is not None]
-                if alloc_dobs:
-                    school_last_dob[c_name] = max(alloc_dobs)
+            self.status_txt.text = ar(f"جاري الفرز والتسكين لطلاب المرحلة {stage_arabic}...")
 
-        for st in students:
-            curr_alloc = st["out_name"]
-            if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
-                sch_name_str = self.clean_school_name(curr_alloc)
-                if sch_name_str in school_accepted_count:
-                    school_accepted_count[sch_name_str] += 1
+            output_dir = os.path.dirname(self.excel_path)
+            output_file = os.path.join(output_dir, f"منظومة_التنسيق_المرحلة_{stage_arabic}.xlsx")
+            pdf_folder = os.path.join(output_dir, f"كشوف_المدارس_المرحلة_{stage_arabic}_PDF")
+            os.makedirs(pdf_folder, exist_ok=True)
 
-        students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
+            wb = openpyxl.load_workbook(self.excel_path)
+            
+            student_sheets = [s for s in wb.sheetnames if "الطلاب" in s]
+            if not student_sheets:
+                self.show_error_popup("خطأ في ملف الإكسيل", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'الطلاب'")
+                return
+            
+            ws_students = wb[student_sheets[0]]
 
-        for st in students_sorted:
-            curr_alloc = st["out_name"]
-            if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
-                continue
+            headers = [cell.value for cell in ws_students[1]]
+            headers_str = [str(h) if h is not None else "" for h in headers]
 
-            dob_dt = st["dob_dt"]
-            s_age = ((calc_date - dob_dt).days) / 365.25 if dob_dt else 0
-            allocated = False
-            rejected_by_age = False
+            def find_col_idx(condition_fn, default=None):
+                for idx, h in enumerate(headers_str):
+                    if condition_fn(h):
+                        return idx + 1
+                return default
 
-            choices = [
-                (st["r4_name"], st["r4_code"]),
-                (st["r1_name"], st["r1_code"]),
-                (st["r2_name"], st["r2_code"]),
-                (st["r3_name"], st["r3_code"]),
-            ]
+            col_dob_idx = find_col_idx(lambda h: "تاريخ الميلاد" in h)
+            col_student_name_idx = find_col_idx(lambda h: "اسم الطالب" in h or ("الاسم" in h and "المدرسة" not in h), default=2)
 
-            for sch_name, sch_code in choices:
-                sch_name_str = self.clean_school_name(sch_name)
-                if sch_name_str and sch_name_str not in ["لا يوجد", "nan"]:
-                    if sch_name_str not in school_capacities:
-                        school_capacities[sch_name_str] = 45
-                        school_min_ages[sch_name_str] = 4.0
-                        school_last_dob[sch_name_str] = None
-                        school_accepted_count[sch_name_str] = 0
+            col_r1_name_idx = find_col_idx(lambda h: "رغبة (1)اسم" in h)
+            col_r1_code_idx = find_col_idx(lambda h: "رغبة (1)م" in h)
+            col_r2_name_idx = find_col_idx(lambda h: "رغبة (2)اسم" in h)
+            col_r2_code_idx = find_col_idx(lambda h: "رغبة (2)م" in h)
+            col_r3_name_idx = find_col_idx(lambda h: "رغبة (3)اسم" in h)
+            col_r3_code_idx = find_col_idx(lambda h: "رغبة (3)م" in h)
+            col_r4_name_idx = find_col_idx(lambda h: "المدرسة المتميزة" in h and "كود" not in h)
+            col_r4_code_idx = find_col_idx(lambda h: "كود المدرسة المتميزة" in h)
 
-                    if s_age < school_min_ages[sch_name_str]:
-                        rejected_by_age = True
-                        continue
+            col_out_name_idx = find_col_idx(lambda h: "اسم" in h and "التسكين" in h)
+            col_out_code_idx = find_col_idx(lambda h: "كود" in h and "التسكين" in h)
 
-                    if school_capacities[sch_name_str] > 0:
-                        st["out_name"] = sch_name_str
-                        st["out_code"] = sch_code
-                        school_capacities[sch_name_str] -= 1
+            col_notes_idx = find_col_idx(lambda h: "الملاحظات" in h)
+            if not col_notes_idx:
+                col_notes_idx = len(headers) + 1
+                ws_students.cell(row=1, column=col_notes_idx, value="الملاحظات")
+
+            students = []
+            for r_idx in range(2, ws_students.max_row + 1):
+                def get_val(col_idx):
+                    if col_idx and col_idx <= ws_students.max_column:
+                        return ws_students.cell(row=r_idx, column=col_idx).value
+                    return None
+
+                dob_val = get_val(col_dob_idx)
+                dob_dt = parse_date(dob_val)
+
+                st = {
+                    "row_idx": r_idx,
+                    "name": get_val(col_student_name_idx),
+                    "dob_val": dob_val,
+                    "dob_dt": dob_dt,
+                    "r1_name": get_val(col_r1_name_idx),
+                    "r1_code": get_val(col_r1_code_idx),
+                    "r2_name": get_val(col_r2_name_idx),
+                    "r2_code": get_val(col_r2_code_idx),
+                    "r3_name": get_val(col_r3_name_idx),
+                    "r3_code": get_val(col_r3_code_idx),
+                    "r4_name": get_val(col_r4_name_idx),
+                    "r4_code": get_val(col_r4_code_idx),
+                    "out_name": str(get_val(col_out_name_idx) or "").strip(),
+                    "out_code": get_val(col_out_code_idx),
+                    "notes": "" if stage_num == 1 else (get_val(col_notes_idx) or ""),
+                }
+                students.append(st)
+
+            school_capacities = {}
+            school_min_ages = {}
+            school_last_dob = {}
+            school_accepted_count = {}
+
+            for sch_name, (cap_tf, age_tf) in self.school_inputs.items():
+                c_name = self.clean_school_name(sch_name)
+                try:
+                    school_capacities[c_name] = int(cap_tf.text)
+                    school_min_ages[c_name] = float(age_tf.text)
+                except Exception:
+                    school_capacities[c_name] = 45
+                    school_min_ages[c_name] = 4.0
+                school_last_dob[c_name] = None
+                school_accepted_count[c_name] = 0
+
+                if stage_num > 1:
+                    alloc_dobs = [s["dob_dt"] for s in students if self.clean_school_name(s["out_name"]) == c_name and s["dob_dt"] is not None]
+                    if alloc_dobs:
+                        school_last_dob[c_name] = max(alloc_dobs)
+
+            for st in students:
+                curr_alloc = st["out_name"]
+                if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
+                    sch_name_str = self.clean_school_name(curr_alloc)
+                    if sch_name_str in school_accepted_count:
                         school_accepted_count[sch_name_str] += 1
-                        school_last_dob[sch_name_str] = dob_dt
-                        allocated = True
-                        break
-                    elif school_capacities[sch_name_str] == 0 and school_last_dob[sch_name_str] == dob_dt and dob_dt is not None:
-                        st["out_name"] = sch_name_str
-                        st["out_code"] = sch_code
-                        school_accepted_count[sch_name_str] += 1
-                        st["notes"] = "مقبول تساوي سن"
-                        allocated = True
-                        break
 
-            if not allocated:
-                st["out_name"] = "قائمة الانتظار"
-                st["out_code"] = 0
-                st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
+            students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
-        for st in students:
-            r_idx = st["row_idx"]
-            ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
-            ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
-            ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
+            for st in students_sorted:
+                curr_alloc = st["out_name"]
+                if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
+                    continue
 
-        wb.save(output_file)
+                dob_dt = st["dob_dt"]
+                s_age = ((calc_date - dob_dt).days) / 365.25 if dob_dt else 0
+                allocated = False
+                rejected_by_age = False
 
-        grouped_students = {}
-        for st in students:
-            alloc = st["out_name"] or "غير مسكن"
-            grouped_students.setdefault(alloc, []).append(st)
+                choices = [
+                    (st["r4_name"], st["r4_code"]),
+                    (st["r1_name"], st["r1_code"]),
+                    (st["r2_name"], st["r2_code"]),
+                    (st["r3_name"], st["r3_code"]),
+                ]
 
-        for sch_title, st_list in grouped_students.items():
-            safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
-            pdf_out_path = os.path.join(pdf_folder, safe_filename)
-            self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
+                for sch_name, sch_code in choices:
+                    sch_name_str = self.clean_school_name(sch_name)
+                    if sch_name_str and sch_name_str not in ["لا يوجد", "nan"]:
+                        if sch_name_str not in school_capacities:
+                            school_capacities[sch_name_str] = 45
+                            school_min_ages[sch_name_str] = 4.0
+                            school_last_dob[sch_name_str] = None
+                            school_accepted_count[sch_name_str] = 0
 
-        self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+                        if s_age < school_min_ages[sch_name_str]:
+                            rejected_by_age = True
+                            continue
+
+                        if school_capacities[sch_name_str] > 0:
+                            st["out_name"] = sch_name_str
+                            st["out_code"] = sch_code
+                            school_capacities[sch_name_str] -= 1
+                            school_accepted_count[sch_name_str] += 1
+                            school_last_dob[sch_name_str] = dob_dt
+                            allocated = True
+                            break
+                        elif school_capacities[sch_name_str] == 0 and school_last_dob[sch_name_str] == dob_dt and dob_dt is not None:
+                            st["out_name"] = sch_name_str
+                            st["out_code"] = sch_code
+                            school_accepted_count[sch_name_str] += 1
+                            st["notes"] = "مقبول تساوي سن"
+                            allocated = True
+                            break
+
+                if not allocated:
+                    st["out_name"] = "قائمة الانتظار"
+                    st["out_code"] = 0
+                    st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
+
+            for st in students:
+                r_idx = st["row_idx"]
+                ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
+                ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
+                ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
+
+            wb.save(output_file)
+
+            grouped_students = {}
+            for st in students:
+                alloc = st["out_name"] or "غير مسكن"
+                grouped_students.setdefault(alloc, []).append(st)
+
+            for sch_title, st_list in grouped_students.items():
+                safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
+                pdf_out_path = os.path.join(pdf_folder, safe_filename)
+                self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
+
+            self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+
+        except Exception as err:
+            err_details = traceback.format_exc()
+            self.show_error_popup("حدث خطأ أثناء التنسيق", f"تفاصيل الخطأ:\n{str(err)}\n\n{err_details}")
 
 
 if __name__ == "__main__":
