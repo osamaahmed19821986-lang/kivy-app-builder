@@ -4,8 +4,12 @@ import calendar
 import traceback
 from datetime import datetime, date
 
-# استيراد أداة معرفة بيئة التشغيل من Kivy
+# استيراد أدوات Kivy والتحكم في النافذة
 from kivy.utils import platform
+from kivy.core.window import Window
+
+# --- ضبط لون خلفية الشاشة (رمادي فاتح هادئ) ---
+Window.clearcolor = (0.93, 0.94, 0.96, 1)
 
 # --- 1. حارس الإقلاع: فحص المكتبات والخط قبل تشغيل الواجهة ---
 IMPORT_ERRORS = []
@@ -30,7 +34,7 @@ try:
 except Exception as e:
     IMPORT_ERRORS.append(f"fpdf2: {e}")
 
-# استيراد مكتبات Kivy
+# استيراد عناصر Kivy
 try:
     from kivy.app import App
     from kivy.uix.boxlayout import BoxLayout
@@ -46,9 +50,8 @@ except Exception as e:
     IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
 
-# --- 2. البحث عن الخط العربي وتثبيته في الأندرويد ---
+# --- 2. البحث عن الخط العربي وتثبيته ---
 def find_font():
-    """البحث عن ملف الخط العربي في كافة المسارات المحتملة على الموبايل"""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(base_dir, "arial.ttf"),
@@ -88,6 +91,7 @@ def ar(text):
         return str(text)
 
 def parse_date(val):
+    """دالة تحويل النص أو الكائن إلى تاريخ بشكل آمن"""
     if val is None or val == "" or str(val).strip().lower() == "nan":
         return None
     if isinstance(val, (datetime, date)):
@@ -110,7 +114,7 @@ def parse_date(val):
 class CoordinationKivyApp(App):
 
     def on_start(self):
-        """طلب صلاحيات الوصول للملفات مع دعم أندرويد 14 الكامل"""
+        """طلب صلاحيات الوصول للملفات مع دعم أندرويد 14"""
         if platform == 'android':
             try:
                 from android.permissions import request_permissions, Permission
@@ -138,7 +142,7 @@ class CoordinationKivyApp(App):
                 print(f"Error requesting permissions: {e}")
 
     def show_error_popup(self, title_text, err_text):
-        """دالة إظهار النوافذ المنبثقة عند حدوث أي أخطاء ومنع إغلاق التطبيق"""
+        """دالة إظهار النوافذ المنبثقة عند حدوث أي أخطاء"""
         content = BoxLayout(orientation="vertical", padding=10, spacing=10)
         lbl = Label(text=ar(err_text), size_hint_y=0.8, color=(1, 0.3, 0.3, 1))
         lbl.bind(size=lbl.setter('text_size'))
@@ -181,25 +185,55 @@ class CoordinationKivyApp(App):
 
         root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
+        # عنوان التطبيق الرئيسي
         title_lbl = Label(
             text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
             font_size="16sp",
             bold=True,
             size_hint_y=None,
             height=35,
-            color=(0.12, 0.24, 0.35, 1)
+            color=(0.1, 0.2, 0.35, 1)
         )
         root.add_widget(title_lbl)
 
-        files_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=110)
+        # --- أزرار اختيار الملفات (كبيرة ومميزة بالألوان) ---
+        files_box = BoxLayout(orientation="vertical", spacing=8, size_hint_y=None, height=170)
 
-        btn_excel = Button(text=ar("اختر ملف الإكسيل الرئيسي (.xlsx)"), size_hint_y=None, height=35)
+        btn_excel = Button(
+            text=ar("📊 اختر ملف الإكسيل الرئيسي (.xlsx)"),
+            size_hint_y=None,
+            height=55,
+            font_size="14sp",
+            bold=True,
+            background_color=(0.15, 0.55, 0.3, 1)
+        )
         btn_excel.bind(on_press=lambda instance: self.open_file_picker("excel"))
-        self.excel_status = Label(text=ar("لم يتم اختيار ملف الإكسيل"), color=(0.5, 0.5, 0.5, 1), font_size="11sp")
+        
+        self.excel_status = Label(
+            text=ar("لم يتم اختيار ملف الإكسيل"),
+            color=(0.4, 0.4, 0.4, 1),
+            font_size="11sp",
+            size_hint_y=None,
+            height=20
+        )
 
-        btn_logo = Button(text=ar("اختر صورة الشعار / اللوجو"), size_hint_y=None, height=35)
+        btn_logo = Button(
+            text=ar("🖼️ اختر صورة الشعار / اللوجو"),
+            size_hint_y=None,
+            height=55,
+            font_size="14sp",
+            bold=True,
+            background_color=(0.2, 0.45, 0.65, 1)
+        )
         btn_logo.bind(on_press=lambda instance: self.open_file_picker("logo"))
-        self.logo_status = Label(text=ar("لم يتم اختيار اللوجو (اختياري)"), color=(0.5, 0.5, 0.5, 1), font_size="11sp")
+        
+        self.logo_status = Label(
+            text=ar("لم يتم اختيار اللوجو (اختياري)"),
+            color=(0.4, 0.4, 0.4, 1),
+            font_size="11sp",
+            size_hint_y=None,
+            height=20
+        )
 
         files_box.add_widget(btn_excel)
         files_box.add_widget(self.excel_status)
@@ -207,8 +241,9 @@ class CoordinationKivyApp(App):
         files_box.add_widget(self.logo_status)
         root.add_widget(files_box)
 
+        # إعدادات التنسيق وتاريخ الاحتساب
         date_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
-        date_box.add_widget(Label(text=ar("إعدادات التنسيق والسن المستهدف:"), bold=True, size_hint_y=None, height=20))
+        date_box.add_widget(Label(text=ar("إعدادات تاريخ احتساب السن والمرحلة:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=20))
 
         inputs_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=30)
         self.day_tf = TextInput(text="1", multiline=False, input_filter="int")
@@ -223,15 +258,22 @@ class CoordinationKivyApp(App):
         date_box.add_widget(inputs_grid)
 
         labels_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=18)
-        labels_grid.add_widget(Label(text=ar("اليوم"), font_size="10sp"))
-        labels_grid.add_widget(Label(text=ar("الشهر"), font_size="10sp"))
-        labels_grid.add_widget(Label(text=ar("السنة"), font_size="10sp"))
-        labels_grid.add_widget(Label(text=ar("المرحلة"), font_size="10sp"))
+        labels_grid.add_widget(Label(text=ar("اليوم"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        labels_grid.add_widget(Label(text=ar("الشهر"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        labels_grid.add_widget(Label(text=ar("السنة"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        labels_grid.add_widget(Label(text=ar("المرحلة"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
         date_box.add_widget(labels_grid)
 
         root.add_widget(date_box)
 
-        root.add_widget(Label(text=ar("الكثافات والحد الأدنى للسن لكل مدرسة:"), bold=True, size_hint_y=None, height=25))
+        # عناوين جدول المدارس
+        root.add_widget(Label(text=ar("الكثافات والحد الأقصى لتاريخ الميلاد المقبول:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=25))
+
+        hdr_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=25, spacing=5)
+        hdr_box.add_widget(Label(text=ar("اسم المدرسة"), size_hint_x=0.4, bold=True, color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("الكثافة"), size_hint_x=0.25, bold=True, color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("أقصى تاريخ ميلاد"), size_hint_x=0.35, bold=True, color=(0.2, 0.2, 0.2, 1)))
+        root.add_widget(hdr_box)
 
         self.schools_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
         self.schools_layout.bind(minimum_height=self.schools_layout.setter("height"))
@@ -240,13 +282,16 @@ class CoordinationKivyApp(App):
         scroll_view.add_widget(self.schools_layout)
         root.add_widget(scroll_view)
 
+        # زر التشغيل
         bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=80)
         self.run_btn = Button(
-            text=ar("بدء معالجة التنسيق وتوليد التقارير"),
+            text=ar("🚀 بدء معالجة التنسيق وتوليد التقارير"),
             background_color=(0.07, 0.3, 0.36, 1),
             disabled=True,
             size_hint_y=None,
-            height=40,
+            height=45,
+            font_size="14sp",
+            bold=True
         )
         self.run_btn.bind(on_press=self.start_coordination)
 
@@ -349,11 +394,13 @@ class CoordinationKivyApp(App):
 
             for sch_name in unique_schools:
                 row_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=35, spacing=5)
-                name_lbl = Label(text=ar(sch_name), size_hint_x=0.4, halign="right")
+                
+                name_lbl = Label(text=ar(sch_name), size_hint_x=0.4, halign="right", color=(0.1, 0.1, 0.1, 1))
                 name_lbl.bind(size=name_lbl.setter("text_size"))
 
-                cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.3)
-                age_tf = TextInput(text="4.0", multiline=False, size_hint_x=0.3)
+                cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.25)
+                # السن كتاريخ افتراضي (2022-10-01 يعادل سن 4 سنوات في 2026)
+                age_tf = TextInput(text="2022-10-01", multiline=False, size_hint_x=0.35)
 
                 row_box.add_widget(name_lbl)
                 row_box.add_widget(cap_tf)
@@ -366,7 +413,7 @@ class CoordinationKivyApp(App):
             self.status_txt.text = ar(f"تم تحميل عدد ({len(unique_schools)}) مدرسة بنجاح.")
 
         except Exception as ex:
-            self.show_error_popup("خطأ تحمبل المدارس", str(ex))
+            self.show_error_popup("خطأ تحميل المدارس", str(ex))
 
     def calculate_exact_ymd(self, dob, calc_date):
         dob_dt = parse_date(dob)
@@ -516,18 +563,23 @@ class CoordinationKivyApp(App):
                 students.append(st)
 
             school_capacities = {}
-            school_min_ages = {}
+            school_min_dobs = {}
             school_last_dob = {}
             school_accepted_count = {}
 
+            # تحميل السعاة وتواريخ الحدود الدنيا للسن
             for sch_name, (cap_tf, age_tf) in self.school_inputs.items():
                 c_name = self.clean_school_name(sch_name)
                 try:
                     school_capacities[c_name] = int(cap_tf.text)
-                    school_min_ages[c_name] = float(age_tf.text)
                 except Exception:
                     school_capacities[c_name] = 45
-                    school_min_ages[c_name] = 4.0
+
+                min_dob = parse_date(age_tf.text)
+                if not min_dob:
+                    min_dob = datetime(2022, 10, 1) # تاريخ أقصى افتراضي إذا كُتب تاريخ غير صحيح
+                school_min_dobs[c_name] = min_dob
+
                 school_last_dob[c_name] = None
                 school_accepted_count[c_name] = 0
 
@@ -543,6 +595,7 @@ class CoordinationKivyApp(App):
                     if sch_name_str in school_accepted_count:
                         school_accepted_count[sch_name_str] += 1
 
+            # ترتيب الطلاب من الأكبر سناً (تاريخ الميلاد الأصغر) إلى الأصغر
             students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
             for st in students_sorted:
@@ -551,7 +604,6 @@ class CoordinationKivyApp(App):
                     continue
 
                 dob_dt = st["dob_dt"]
-                s_age = ((calc_date - dob_dt).days) / 365.25 if dob_dt else 0
                 allocated = False
                 rejected_by_age = False
 
@@ -567,11 +619,12 @@ class CoordinationKivyApp(App):
                     if sch_name_str and sch_name_str not in ["لا يوجد", "nan"]:
                         if sch_name_str not in school_capacities:
                             school_capacities[sch_name_str] = 45
-                            school_min_ages[sch_name_str] = 4.0
+                            school_min_dobs[sch_name_str] = datetime(2022, 10, 1)
                             school_last_dob[sch_name_str] = None
                             school_accepted_count[sch_name_str] = 0
 
-                        if s_age < school_min_ages[sch_name_str]:
+                        # إذا كان تاريخ ميلاد الطفل بعد التاريخ الحد الأقصى للمدرسة -> يكون أصغر من السن المطلوب
+                        if dob_dt and dob_dt > school_min_dobs[sch_name_str]:
                             rejected_by_age = True
                             continue
 
@@ -591,30 +644,30 @@ class CoordinationKivyApp(App):
                             allocated = True
                             break
 
-            if not allocated:
-                st["out_name"] = "قائمة الانتظار"
-                st["out_code"] = 0
-                st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
+                if not allocated:
+                    st["out_name"] = "قائمة الانتظار"
+                    st["out_code"] = 0
+                    st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
 
-        for st in students:
-            r_idx = st["row_idx"]
-            ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
-            ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
-            ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
+            for st in students:
+                r_idx = st["row_idx"]
+                ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
+                ws_students.cell(row=r_idx, column=col_out_code_idx, value=st["out_code"])
+                ws_students.cell(row=r_idx, column=col_notes_idx, value=st["notes"])
 
-        wb.save(output_file)
+            wb.save(output_file)
 
-        grouped_students = {}
-        for st in students:
-            alloc = st["out_name"] or "غير مسكن"
-            grouped_students.setdefault(alloc, []).append(st)
+            grouped_students = {}
+            for st in students:
+                alloc = st["out_name"] or "غير مسكن"
+                grouped_students.setdefault(alloc, []).append(st)
 
-        for sch_title, st_list in grouped_students.items():
-            safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
-            pdf_out_path = os.path.join(pdf_folder, safe_filename)
-            self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
+            for sch_title, st_list in grouped_students.items():
+                safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
+                pdf_out_path = os.path.join(pdf_folder, safe_filename)
+                self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
 
-        self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+            self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
 
         except Exception as err:
             err_details = traceback.format_exc()
