@@ -19,16 +19,19 @@ source.include_exts = py,png,jpg,ttf,xlsx
 version = 0.2
 
 # (list) Application requirements
-# المكتبات الخاصة بمشروعك
 requirements = python3,kivy,openpyxl,arabic_reshaper,python-bidi,fpdf2
 
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
+
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
 
 # (list) Permissions
 android.permissions = INTERNET, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_MEDIA_IMAGES, MANAGE_EXTERNAL_STORAGE
+
+# (bool) Accept SDK license agreement automatically
+android.accept_sdk_license = True
 
 # (int) Target Android API
 android.api = 33
