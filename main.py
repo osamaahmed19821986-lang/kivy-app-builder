@@ -2,11 +2,13 @@ import sys
 import os
 import calendar
 import traceback
+import threading
 from datetime import datetime, date
 
 # استيراد أدوات Kivy والتحكم في النافذة
 from kivy.utils import platform
 from kivy.core.window import Window
+from kivy.clock import Clock
 
 # --- ضبط لون خلفية الشاشة (رمادي فاتح هادئ) ---
 Window.clearcolor = (0.93, 0.94, 0.96, 1)
@@ -182,6 +184,7 @@ class CoordinationKivyApp(App):
         self.excel_path = ""
         self.logo_path = ""
         self.school_inputs = {}
+        self.loading_popup = None
 
         root = BoxLayout(orientation="vertical", padding=15, spacing=10)
 
@@ -293,7 +296,7 @@ class CoordinationKivyApp(App):
             font_size="14sp",
             bold=True
         )
-        self.run_btn.bind(on_press=self.start_coordination)
+        self.run_btn.bind(on_press=self.start_coordination_thread)
 
         self.status_txt = Label(
             text=ar("جاهز.. قم باختيار ملف الإكسيل أولاً."),
@@ -399,7 +402,6 @@ class CoordinationKivyApp(App):
                 name_lbl.bind(size=name_lbl.setter("text_size"))
 
                 cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.25)
-                # السن كتاريخ افتراضي (2022-10-01 يعادل سن 4 سنوات في 2026)
                 age_tf = TextInput(text="2022-10-01", multiline=False, size_hint_x=0.35)
 
                 row_box.add_widget(name_lbl)
@@ -476,7 +478,39 @@ class CoordinationKivyApp(App):
         except Exception as e:
             print(f"PDF generation error: {e}")
 
-    def start_coordination(self, instance):
+    # --- إدارة خيط المعالجة وإبراز التحميل ---
+    def start_coordination_thread(self, instance):
+        """بدء عملية التنسيق في خيط منفصل وإظهار نافذة التحميل فوراً"""
+        self.run_btn.disabled = True
+        
+        # إنشاء نافذة التحميل المنبثقة
+        content = BoxLayout(orientation="vertical", padding=15, spacing=10)
+        self.loading_label = Label(
+            text=ar("⏳ جاري الفرز والتسكين وتوليد التقارير...\nيرجى الانتظار عدم إغلاق التطبيق"),
+            halign="center",
+            color=(0.1, 0.6, 0.8, 1),
+            font_size="13sp"
+        )
+        self.loading_label.bind(size=self.loading_label.setter('text_size'))
+        content.add_widget(self.loading_label)
+        
+        self.loading_popup = Popup(
+            title=ar("جاري معالجة البيانات"),
+            content=content,
+            size_hint=(0.8, 0.3),
+            auto_dismiss=False
+        )
+        self.loading_popup.open()
+
+        # تشغيل الدالة في خيط فرعي حتى لا تتجمد واجهة المستخدم
+        threading.Thread(target=self.run_coordination_process, daemon=True).start()
+
+    def update_loading_status(self, text):
+        """تحديث نص نافذة التحميل بطريقة آمنة للخيوط"""
+        Clock.schedule_once(lambda dt: setattr(self.loading_label, 'text', ar(text)))
+
+    def run_coordination_process(self):
+        """دالة المعالجة الفعلية التي تعمل في الخلفية"""
         try:
             year_str = self.year_tf.text
             stage_num = int(self.stage_tf.text)
@@ -485,21 +519,20 @@ class CoordinationKivyApp(App):
             try:
                 calc_date = datetime(int(year_str), int(self.month_tf.text), int(self.day_tf.text))
             except Exception:
-                self.show_error_popup("تاريخ غير صحيح", "يرجى التأكد من كتابة تاريخ احتساب السن بشكل صحيح.")
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("تاريخ غير صحيح", "يرجى التأكد من كتابة تاريخ احتساب السن بشكل صحيح."))
                 return
-
-            self.status_txt.text = ar(f"جاري الفرز والتسكين لطلاب المرحلة {stage_arabic}...")
 
             output_dir = os.path.dirname(self.excel_path)
             output_file = os.path.join(output_dir, f"منظومة_التنسيق_المرحلة_{stage_arabic}.xlsx")
             pdf_folder = os.path.join(output_dir, f"كشوف_المدارس_المرحلة_{stage_arabic}_PDF")
             os.makedirs(pdf_folder, exist_ok=True)
 
+            self.update_loading_status("📖 جاري قراءة وتحليل ملف الإكسيل...")
             wb = openpyxl.load_workbook(self.excel_path)
             
             student_sheets = [s for s in wb.sheetnames if "الطلاب" in s]
             if not student_sheets:
-                self.show_error_popup("خطأ في ملف الإكسيل", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'الطلاب'")
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("خطأ في ملف الإكسيل", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'الطلاب'"))
                 return
             
             ws_students = wb[student_sheets[0]]
@@ -562,12 +595,12 @@ class CoordinationKivyApp(App):
                 }
                 students.append(st)
 
+            self.update_loading_status("🔄 جاري تطبيق القواعد وتسكين الطلاب...")
             school_capacities = {}
             school_min_dobs = {}
             school_last_dob = {}
             school_accepted_count = {}
 
-            # تحميل السعاة وتواريخ الحدود الدنيا للسن
             for sch_name, (cap_tf, age_tf) in self.school_inputs.items():
                 c_name = self.clean_school_name(sch_name)
                 try:
@@ -577,7 +610,7 @@ class CoordinationKivyApp(App):
 
                 min_dob = parse_date(age_tf.text)
                 if not min_dob:
-                    min_dob = datetime(2022, 10, 1) # تاريخ أقصى افتراضي إذا كُتب تاريخ غير صحيح
+                    min_dob = datetime(2022, 10, 1)
                 school_min_dobs[c_name] = min_dob
 
                 school_last_dob[c_name] = None
@@ -595,7 +628,6 @@ class CoordinationKivyApp(App):
                     if sch_name_str in school_accepted_count:
                         school_accepted_count[sch_name_str] += 1
 
-            # ترتيب الطلاب من الأكبر سناً (تاريخ الميلاد الأصغر) إلى الأصغر
             students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
 
             for st in students_sorted:
@@ -623,7 +655,6 @@ class CoordinationKivyApp(App):
                             school_last_dob[sch_name_str] = None
                             school_accepted_count[sch_name_str] = 0
 
-                        # إذا كان تاريخ ميلاد الطفل بعد التاريخ الحد الأقصى للمدرسة -> يكون أصغر من السن المطلوب
                         if dob_dt and dob_dt > school_min_dobs[sch_name_str]:
                             rejected_by_age = True
                             continue
@@ -649,6 +680,7 @@ class CoordinationKivyApp(App):
                     st["out_code"] = 0
                     st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
 
+            self.update_loading_status("💾 جاري كتابة وحفظ ملف الإكسيل...")
             for st in students:
                 r_idx = st["row_idx"]
                 ws_students.cell(row=r_idx, column=col_out_name_idx, value=st["out_name"])
@@ -657,6 +689,7 @@ class CoordinationKivyApp(App):
 
             wb.save(output_file)
 
+            self.update_loading_status("📄 جاري توليد كشوف المدارس بصيغة PDF...")
             grouped_students = {}
             for st in students:
                 alloc = st["out_name"] or "غير مسكن"
@@ -667,11 +700,25 @@ class CoordinationKivyApp(App):
                 pdf_out_path = os.path.join(pdf_folder, safe_filename)
                 self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
 
-            self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+            Clock.schedule_once(lambda dt: self.finish_coordination_success(pdf_folder))
 
         except Exception as err:
             err_details = traceback.format_exc()
-            self.show_error_popup("حدث خطأ أثناء التنسيق", f"تفاصيل الخطأ:\n{str(err)}\n\n{err_details}")
+            Clock.schedule_once(lambda dt: self.finish_coordination_with_error("حدث خطأ أثناء التنسيق", f"تفاصيل الخطأ:\n{str(err)}\n\n{err_details}"))
+
+    def finish_coordination_success(self, pdf_folder):
+        """إنهاء العملية بنجاح وإغلاق مؤشر التحميل"""
+        if self.loading_popup:
+            self.loading_popup.dismiss()
+        self.run_btn.disabled = False
+        self.status_txt.text = ar(f"✅ تم الحفظ وتوليد كشوف PDF بنجاح في:\n{pdf_folder}")
+
+    def finish_coordination_with_error(self, title, err_msg):
+        """إنهاء العملية بسبب خطأ وإظهار نافذة الخطأ"""
+        if self.loading_popup:
+            self.loading_popup.dismiss()
+        self.run_btn.disabled = False
+        self.show_error_popup(title, err_msg)
 
 
 if __name__ == "__main__":
