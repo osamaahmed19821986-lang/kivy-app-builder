@@ -3,14 +3,16 @@
 منظومة تنسيق رياض الأطفال والمدارس الرسمية للغات
 مديرية التربية والتعليم بأسوان - محافظة أسوان
 --------------------------------------------------
-المخرجات:
-1. شيتات إكسيل مستقلة لكل مدرسة مع تقسيم السن (سنة - شهر - يوم).
-2. تقارير PDF منسقة للطباعة بالترويسة واللوجو والتوقيعات المطلوبة.
+تطبيق متكامل يدعم:
+1. معالجة شيت الإكسيل العام وإنشاء شيتات مستقلة لكل مدرسة.
+2. استخراج تقارير PDF المنسقة للطباعة لكل مدرسة.
+3. واجهة مستخدم Kivy تدعم اللغة العربية بدون مربعات رموز.
 """
 
 import os
 import sys
 import datetime
+import calendar
 import openpyxl
 from openpyxl.styles import Alignment, Font, Border, Side
 
@@ -26,7 +28,7 @@ except ImportError:
     HAS_PDF_LIBS = False
 
 # ==========================================
-# 2. استيراد واجهة Kivy
+# 2. استيراد Kivy وتسجيل الخط العربي
 # ==========================================
 try:
     from kivy.app import App
@@ -35,17 +37,23 @@ try:
     from kivy.uix.label import Label
     from kivy.uix.textinput import TextInput
     from kivy.uix.button import Button
-    from kivy.uix.popup import Popup
-    from kivy.uix.filechooser import FileChooserListView
-    from kivy.uix.scrollview import ScrollView
-    from kivy.core.window import Window
+    from kivy.core.text import LabelBase
     HAS_KIVY = True
+
+    # تسجيل الخط العربي لحل مشكلة المربعات (☒☒☒) في Kivy
+    ARABIC_FONT = "arial.ttf"
+    if os.path.exists(ARABIC_FONT):
+        LabelBase.register(name='Roboto', fn_regular=ARABIC_FONT)
+    elif os.path.exists("C:/Windows/Fonts/arial.ttf"):
+        LabelBase.register(name='Roboto', fn_regular="C:/Windows/Fonts/arial.ttf")
+    elif os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        LabelBase.register(name='Roboto', fn_regular="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 except ImportError:
     HAS_KIVY = False
 
 
 # ==========================================
-# 3. دالة معالجة النص العربي للـ PDF
+# 3. دالة معالجة النص العربي للـ PDF والواجهة
 # ==========================================
 def fix_ar(text):
     if text is None:
@@ -87,7 +95,6 @@ def calculate_age(dob_date, target_date=None):
         months -= 1
         prev_month = target_date.month - 1 if target_date.month > 1 else 12
         prev_year = target_date.year if target_date.month > 1 else target_date.year - 1
-        import calendar
         _, days_in_prev = calendar.monthrange(prev_year, prev_month)
         days += days_in_prev
 
@@ -111,13 +118,13 @@ class SchoolReportPDF(FPDF if HAS_PDF_LIBS else object):
         self.school_year = school_year
         self.logo_path = logo_path
         
-        # البحث عن الخط العربي
+        # اختيار الخط العربي
         font_path = "arial.ttf"
         font_bd_path = "arialbd.ttf"
         if not os.path.exists(font_path):
-            if os.path.exists("C:\\Windows\\Fonts\\arial.ttf"):
-                font_path = "C:\\Windows\\Fonts\\arial.ttf"
-                font_bd_path = "C:\\Windows\\Fonts\\arialbd.ttf"
+            if os.path.exists("C:/Windows/Fonts/arial.ttf"):
+                font_path = "C:/Windows/Fonts/arial.ttf"
+                font_bd_path = "C:/Windows/Fonts/arialbd.ttf"
             elif os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
                 font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
                 font_bd_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -125,8 +132,8 @@ class SchoolReportPDF(FPDF if HAS_PDF_LIBS else object):
         try:
             self.add_font('ArabicFont', '', font_path, uni=True)
             self.add_font('ArabicFont', 'B', font_bd_path if os.path.exists(font_bd_path) else font_path, uni=True)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Font load warning: {e}")
 
     def header(self):
         if not HAS_PDF_LIBS:
@@ -143,12 +150,12 @@ class SchoolReportPDF(FPDF if HAS_PDF_LIBS else object):
         if self.logo_path and os.path.exists(self.logo_path):
             try:
                 self.image(self.logo_path, x=12, y=10, w=25)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Logo error: {e}")
             
         self.ln(6)
         
-        # 3. المنتصف (عنوان التنسيق واسم المدرسة)
+        # 3. المنتصف (العنوان واسم المدرسة)
         self.set_font('ArabicFont', 'B', 12)
         title = f"كشف تنسيق المرحلة ({self.stage_name}) للعام الدراسي {self.school_year}"
         self.cell(0, 7, fix_ar(title), ln=1, align='C')
@@ -161,27 +168,17 @@ class SchoolReportPDF(FPDF if HAS_PDF_LIBS else object):
         if not HAS_PDF_LIBS:
             return
         self.set_font('ArabicFont', 'B', 10)
-        
         curr_y = self.get_y()
         
-        # رسم الخلايا من اليمين إلى اليسار ظاهرياً
-        # 1. ملاحظات (44mm)
+        # رسم الترويسة المدمجة (من اليمين لليسار)
         self.set_xy(10, curr_y)
         self.cell(44, 12, fix_ar("ملاحظات"), border=1, align='C')
-        
-        # 2. السن في أول أكتوبر (36mm)
         self.cell(36, 6, fix_ar("السن في أول أكتوبر"), border=1, align='C')
-        
-        # 3. تاريخ الميلاد (25mm)
         self.cell(25, 12, fix_ar("تاريخ الميلاد"), border=1, align='C')
-        
-        # 4. اسم الطالب (55mm)
         self.cell(55, 12, fix_ar("اسم الطالب"), border=1, align='C')
-        
-        # 5. مسلسل (10mm)
         self.cell(10, 12, fix_ar("م"), border=1, align='C')
         
-        # الصف الثاني لتقسيمة السن (سنة - شهر - يوم)
+        # الصف الثاني لتقسيم السن
         self.set_xy(54, curr_y + 6)
         self.cell(12, 6, fix_ar("سنة"), border=1, align='C')
         self.cell(12, 6, fix_ar("شهر"), border=1, align='C')
@@ -192,20 +189,19 @@ class SchoolReportPDF(FPDF if HAS_PDF_LIBS else object):
     def footer_signatures(self):
         if not HAS_PDF_LIBS:
             return
-        # ترك مسافة كافية للتوقيعات في أسفل الصفحة
         self.set_y(-28)
         self.set_font('ArabicFont', 'B', 11)
         
         col_w = 63
         self.set_x(10)
-        # اليسار: يعتمد مدير المديرية | المنتصف: مدير التعليم العام | اليمين: لجنة التنسيق
+        # التوقيعات من اليمين لليسار
         self.cell(col_w, 6, fix_ar("يعتمد مدير المديرية"), border=0, align='C')
         self.cell(col_w, 6, fix_ar("مدير التعليم العام"), border=0, align='C')
         self.cell(col_w, 6, fix_ar("لجنة التنسيق"), border=0, align='C')
 
 
 # ==========================================
-# 6. معالجة شيتات الإكسيل المخصصة لكل مدرسة
+# 6. إضافة شيتات المدارس لملف الإكسيل
 # ==========================================
 def add_school_sheets_to_excel(excel_path, output_excel_path, schools_data):
     wb = openpyxl.load_workbook(excel_path)
@@ -228,10 +224,9 @@ def add_school_sheets_to_excel(excel_path, output_excel_path, schools_data):
         else:
             ws = wb.create_sheet(title=clean_title)
             
-        # اتجاه الشيت من اليمين إلى اليسار
         ws.sheet_view.rightToLeft = True
 
-        # الدمج والتنسيق للترويسة
+        # إعداد هيدر الشيت
         ws.merge_cells('A1:A2')
         ws['A1'] = "م"
         
@@ -281,7 +276,7 @@ def add_school_sheets_to_excel(excel_path, output_excel_path, schools_data):
 
 
 # ==========================================
-# 7. توليد جميع تقارير PDF
+# 7. توليد تقارير PDF المدارس
 # ==========================================
 def generate_all_pdf_reports(schools_data, stage_name, school_year, output_dir, logo_path=None):
     if not HAS_PDF_LIBS:
@@ -307,7 +302,7 @@ def generate_all_pdf_reports(schools_data, stage_name, school_year, output_dir, 
                 
             curr_y = pdf.get_y()
             
-            # طباعة السطر من اليمين لليسار
+            # كتابة السطر (يمين إلى يسار)
             pdf.set_xy(10, curr_y)
             pdf.cell(44, 7, fix_ar(student.get('notes', '')), border=1, align='R')
             pdf.cell(12, 7, str(student.get('age_years', '')), border=1, align='C')
@@ -322,7 +317,7 @@ def generate_all_pdf_reports(schools_data, stage_name, school_year, output_dir, 
 
 
 # ==========================================
-# 8. خوارزمية المعالجة الشاملة
+# 8. المعالجة الرئيسية
 # ==========================================
 def process_coordination(excel_path, logo_path, stage_name="الأولى", school_year="2026/2027", target_date_str="2026-10-01"):
     if not os.path.exists(excel_path):
@@ -370,10 +365,10 @@ def process_coordination(excel_path, logo_path, stage_name="الأولى", schoo
     output_excel_name = f"منظومة_التنسيق_المرحلة_{stage_name}.xlsx"
     output_excel_path = os.path.join(dir_name, output_excel_name)
     
-    # 1. إنشاء شيت إكسيل لكل مدرسة
+    # 1. تحديث الإكسيل وإضافة شيتات المدارس
     add_school_sheets_to_excel(excel_path, output_excel_path, schools_data)
     
-    # 2. إنشاء تقارير ה-PDF
+    # 2. توليد كشوف ה-PDF
     output_pdf_dir = os.path.join(dir_name, f"كشوف_المدارس_المرحلة_{stage_name}_PDF")
     generate_all_pdf_reports(schools_data, stage_name, school_year, output_pdf_dir, logo_path)
     
@@ -381,7 +376,7 @@ def process_coordination(excel_path, logo_path, stage_name="الأولى", schoo
 
 
 # ==========================================
-# 9. واجهة Kivy للتطبيق
+# 9. واجهة Kivy المحدثة لدعم العربية
 # ==========================================
 if HAS_KIVY:
     class KGCoordinationGUI(BoxLayout):
@@ -391,42 +386,48 @@ if HAS_KIVY:
             self.padding = 15
             self.spacing = 10
             
-            # العناوين
-            self.add_widget(Label(text="مديرية التربية والتعليم بأسوان", font_size='20sp', size_hint_y=None, height=35))
-            self.add_widget(Label(text="منظومة تنسيق رياض الأطفال والمدارس الرسمية للغات", font_size='16sp', size_hint_y=None, height=30))
+            # العناوين مع المعالجة العربية
+            self.add_widget(Label(text=fix_ar("مديرية التربية والتعليم بأسوان"), font_size='20sp', size_hint_y=None, height=35))
+            self.add_widget(Label(text=fix_ar("منظومة تنسيق رياض الأطفال والمدارس الرسمية للغات"), font_size='15sp', size_hint_y=None, height=30))
             
             # حقول الإدخال
             grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height=180)
             
-            grid.add_widget(Label(text="مسار ملف الإكسيل:"))
+            grid.add_widget(Label(text=fix_ar("مسار ملف الإكسيل:")))
             self.excel_input = TextInput(text="students.xlsx", multiline=False)
             grid.add_widget(self.excel_input)
             
-            grid.add_widget(Label(text="مسار صوورة اللوجو (اختياري):"))
+            grid.add_widget(Label(text=fix_ar("مسار صورة اللوجو (اختياري):")))
             self.logo_input = TextInput(text="logo.png", multiline=False)
             grid.add_widget(self.logo_input)
             
-            grid.add_widget(Label(text="اسم المرحلة (مثلاً: الأولى):"))
+            grid.add_widget(Label(text=fix_ar("اسم المرحلة:")))
             self.stage_input = TextInput(text="الأولى", multiline=False)
             grid.add_widget(self.stage_input)
             
-            grid.add_widget(Label(text="العام الدراسي (مثلاً: 2026/2027):"))
+            grid.add_widget(Label(text=fix_ar("العام الدراسي:")))
             self.year_input = TextInput(text="2026/2027", multiline=False)
             grid.add_widget(self.year_input)
             
             self.add_widget(grid)
             
             # زر التشغيل
-            self.btn_run = Button(text="بدء التنسيق واستخراج التقارير", background_color=(0.2, 0.6, 0.2, 1), font_size='18sp', size_hint_y=None, height=50)
+            self.btn_run = Button(
+                text=fix_ar("بدء التنسيق واستخراج التقارير"), 
+                background_color=(0.2, 0.6, 0.2, 1), 
+                font_size='18sp', 
+                size_hint_y=None, 
+                height=50
+            )
             self.btn_run.bind(on_press=self.run_process)
             self.add_widget(self.btn_run)
             
-            # منطقة السجلات
-            self.log_area = TextInput(readonly=True, text="جاهز لبدء العمل...\n")
+            # منطقة المخرجات والسجلات
+            self.log_area = TextInput(readonly=True, text=fix_ar("جاهز لبدء العمل...\n"))
             self.add_widget(self.log_area)
 
         def log(self, msg):
-            self.log_area.text += str(msg) + "\n"
+            self.log_area.text += fix_ar(str(msg)) + "\n"
 
         def run_process(self, instance):
             try:
@@ -438,18 +439,18 @@ if HAS_KIVY:
                 self.log("جاري معالجة البيانات واستخراج التقارير...")
                 out_excel, out_pdf = process_coordination(excel_p, logo_p if os.path.exists(logo_p) else None, stage_p, year_p)
                 
-                self.log(f"تم بنجاح! تم حفظ ملف الإكسيل الجديد:\n{out_excel}")
-                self.log(f"تم حفظ تقارير الـ PDF بنجاح في المجلد:\n{out_pdf}")
+                self.log(f"تم بنجاح! تم حفظ ملف الإكسيل:\n{out_excel}")
+                self.log(f"تم حفظ تقارير الـ PDF في المجلد:\n{out_pdf}")
             except Exception as e:
                 self.log(f"حدث خطأ أثناء المعالجة: {e}")
 
     class KGApp(App):
         def build(self):
-            self.title = "منظومة تنسيق رياض الأطفال - مديرية التربية والتعليم بأسوان"
+            self.title = fix_ar("منظومة تنسيق رياض الأطفال - أسوان")
             return KGCoordinationGUI()
 
 if __name__ == "__main__":
     if HAS_KIVY:
         KGApp().run()
     else:
-        print("Kivy is not installed. Running in console mode.")
+        print("Kivy is not installed. Running backend logic...")
