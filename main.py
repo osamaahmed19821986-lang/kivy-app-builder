@@ -1,456 +1,806 @@
-# -*- coding: utf-8 -*-
-"""
-منظومة تنسيق رياض الأطفال والمدارس الرسمية للغات
-مديرية التربية والتعليم بأسوان - محافظة أسوان
---------------------------------------------------
-تطبيق متكامل يدعم:
-1. معالجة شيت الإكسيل العام وإنشاء شيتات مستقلة لكل مدرسة.
-2. استخراج تقارير PDF المنسقة للطباعة لكل مدرسة.
-3. واجهة مستخدم Kivy تدعم اللغة العربية بدون مربعات رموز.
-"""
-
-import os
 import sys
-import datetime
+import os
 import calendar
-import openpyxl
-from openpyxl.styles import Alignment, Font, Border, Side
+import traceback
+import threading
+from datetime import datetime, date
 
-# ==========================================
-# 1. استيراد مكتبات PDF واللغة العربية
-# ==========================================
+from kivy.utils import platform
+from kivy.core.window import Window
+from kivy.clock import Clock
+
+# --- ضبط لون خلفية الشاشة ---
+Window.clearcolor = (0.93, 0.94, 0.96, 1)
+
+# --- 1. حارس الإقلاع: فحص المكتبات والخط ---
+IMPORT_ERRORS = []
+
+try:
+    import openpyxl
+except Exception as e:
+    IMPORT_ERRORS.append(f"openpyxl: {e}")
+
+try:
+    import arabic_reshaper
+except Exception as e:
+    IMPORT_ERRORS.append(f"arabic_reshaper: {e}")
+
+try:
+    from bidi.algorithm import get_display
+except Exception as e:
+    IMPORT_ERRORS.append(f"python-bidi: {e}")
+
 try:
     from fpdf import FPDF
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-    HAS_PDF_LIBS = True
-except ImportError:
-    HAS_PDF_LIBS = False
+except Exception as e:
+    IMPORT_ERRORS.append(f"fpdf2: {e}")
 
-# ==========================================
-# 2. استيراد Kivy وتسجيل الخط العربي
-# ==========================================
 try:
     from kivy.app import App
     from kivy.uix.boxlayout import BoxLayout
     from kivy.uix.gridlayout import GridLayout
+    from kivy.uix.scrollview import ScrollView
     from kivy.uix.label import Label
     from kivy.uix.textinput import TextInput
     from kivy.uix.button import Button
+    from kivy.uix.popup import Popup
+    from kivy.uix.filechooser import FileChooserListView
     from kivy.core.text import LabelBase
-    HAS_KIVY = True
-
-    # تسجيل الخط العربي لحل مشكلة المربعات (☒☒☒) في Kivy
-    ARABIC_FONT = "arial.ttf"
-    if os.path.exists(ARABIC_FONT):
-        LabelBase.register(name='Roboto', fn_regular=ARABIC_FONT)
-    elif os.path.exists("C:/Windows/Fonts/arial.ttf"):
-        LabelBase.register(name='Roboto', fn_regular="C:/Windows/Fonts/arial.ttf")
-    elif os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-        LabelBase.register(name='Roboto', fn_regular="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-except ImportError:
-    HAS_KIVY = False
+except Exception as e:
+    IMPORT_ERRORS.append(f"Kivy Core: {e}")
 
 
-# ==========================================
-# 3. دالة معالجة النص العربي للـ PDF والواجهة
-# ==========================================
-def fix_ar(text):
-    if text is None:
+# --- 2. البحث عن الخط العربي وتسجيله ---
+def find_font():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "arial.ttf"),
+        "arial.ttf",
+        os.path.abspath("arial.ttf"),
+        os.path.join(os.getcwd(), "arial.ttf"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+FONT_PATH = find_font()
+
+if FONT_PATH:
+    try:
+        LabelBase.register(
+            name="Roboto",
+            fn_regular=FONT_PATH,
+            fn_bold=FONT_PATH,
+            fn_italic=FONT_PATH,
+            fn_bolditalic=FONT_PATH
+        )
+    except Exception as e:
+        IMPORT_ERRORS.append(f"خطأ في تسجيل الخط: {e}")
+else:
+    IMPORT_ERRORS.append("⚠️ لم يتم العثور على ملف الخط (arial.ttf)!")
+
+def ar(text):
+    """ضبط اتجاه النص العربي"""
+    if text is None or text == "" or str(text).strip().lower() == "nan":
         return ""
-    text_str = str(text).strip()
-    if not text_str:
-        return ""
-    if HAS_PDF_LIBS:
-        reshaped = arabic_reshaper.reshape(text_str)
+    try:
+        reshaped = arabic_reshaper.reshape(str(text))
         return get_display(reshaped)
-    return text_str
+    except Exception:
+        return str(text)
 
-
-# ==========================================
-# 4. دالة حساب السن في أول أكتوبر
-# ==========================================
-def calculate_age(dob_date, target_date=None):
-    if target_date is None:
-        target_date = datetime.date(2026, 10, 1)
-    
-    if isinstance(dob_date, datetime.datetime):
-        dob_date = dob_date.date()
-    elif isinstance(dob_date, str):
-        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y'):
+def parse_date(val):
+    """تحويل القيم لتاريخ بشكل سريع وآمن"""
+    if val is None or val == "" or str(val).strip().lower() == "nan":
+        return None
+    if isinstance(val, (datetime, date)):
+        if isinstance(val, datetime):
+            return val
+        return datetime(val.year, val.month, val.day)
+    try:
+        s_val = str(val).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
             try:
-                dob_date = datetime.datetime.strptime(dob_date.strip(), fmt).date()
-                break
+                return datetime.strptime(s_val, fmt)
             except ValueError:
                 pass
-    
-    if not isinstance(dob_date, datetime.date):
-        return 0, 0, 0
-
-    years = target_date.year - dob_date.year
-    months = target_date.month - dob_date.month
-    days = target_date.day - dob_date.day
-
-    if days < 0:
-        months -= 1
-        prev_month = target_date.month - 1 if target_date.month > 1 else 12
-        prev_year = target_date.year if target_date.month > 1 else target_date.year - 1
-        _, days_in_prev = calendar.monthrange(prev_year, prev_month)
-        days += days_in_prev
-
-    if months < 0:
-        years -= 1
-        months += 12
-
-    return years, months, days
+    except Exception:
+        pass
+    return None
 
 
-# ==========================================
-# 5. كلاس إنشاء تقرير ה-PDF للمدرسة
-# ==========================================
-class SchoolReportPDF(FPDF if HAS_PDF_LIBS else object):
-    def __init__(self, school_name, stage_name, school_year, logo_path=None):
-        if not HAS_PDF_LIBS:
-            return
-        super().__init__(orientation='P', unit='mm', format='A4')
-        self.school_name = school_name
-        self.stage_name = stage_name
-        self.school_year = school_year
-        self.logo_path = logo_path
+# --- 3. التطبيق الرئيسي ---
+class CoordinationKivyApp(App):
+
+    def on_start(self):
+        """طلب صلاحيات الوصول للملفات في أندرويد"""
+        if platform == 'android':
+            try:
+                from android.permissions import request_permissions, Permission
+                from android import api_version
+                from jnius import autoclass
+
+                if api_version >= 33:
+                    request_permissions([Permission.READ_MEDIA_IMAGES])
+                    Environment = autoclass('android.os.Environment')
+                    if not Environment.isExternalStorageManager():
+                        Intent = autoclass('android.content.Intent')
+                        Settings = autoclass('android.provider.Settings')
+                        Uri = autoclass('android.net.Uri')
+                        activity = autoclass('org.kivy.android.PythonActivity').mActivity
+                        
+                        intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        intent.setData(Uri.parse(f"package:{activity.getPackageName()}"))
+                        activity.startActivity(intent)
+                else:
+                    request_permissions([
+                        Permission.READ_EXTERNAL_STORAGE,
+                        Permission.WRITE_EXTERNAL_STORAGE
+                    ])
+            except Exception as e:
+                print(f"Error requesting permissions: {e}")
+
+    def show_error_popup(self, title_text, err_text):
+        content = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        lbl = Label(text=ar(err_text), size_hint_y=0.8, color=(1, 0.3, 0.3, 1))
+        lbl.bind(size=lbl.setter('text_size'))
+        btn = Button(text=ar("إغلاق"), size_hint_y=0.2)
         
-        # اختيار الخط العربي
-        font_path = "arial.ttf"
-        font_bd_path = "arialbd.ttf"
-        if not os.path.exists(font_path):
-            if os.path.exists("C:/Windows/Fonts/arial.ttf"):
-                font_path = "C:/Windows/Fonts/arial.ttf"
-                font_bd_path = "C:/Windows/Fonts/arialbd.ttf"
-            elif os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-                font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-                font_bd_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        content.add_widget(lbl)
+        content.add_widget(btn)
+        
+        popup = Popup(title=ar(title_text), content=content, size_hint=(0.9, 0.6))
+        btn.bind(on_press=popup.dismiss)
+        popup.open()
 
+    def build(self):
+        if IMPORT_ERRORS:
+            err_box = BoxLayout(orientation="vertical", padding=20)
+            msg = "⚠️ تعذر تشغيل التطبيق بسبب الأخطاء التالية:\n\n" + "\n".join(IMPORT_ERRORS)
+            err_lbl = Label(text=msg, color=(1, 0.2, 0.2, 1), font_size="13sp")
+            err_lbl.bind(size=err_lbl.setter('text_size'))
+            err_box.add_widget(err_lbl)
+            return err_box
+
+        return self.create_main_ui()
+
+    def create_main_ui(self):
+        self.title = "منظومة تنسيق رياض الأطفال"
+        self.excel_path = ""
+        self.logo_path = ""
+        self.school_inputs = {}
+        self.loading_popup = None
+
+        root = BoxLayout(orientation="vertical", padding=10, spacing=8)
+
+        title_lbl = Label(
+            text=ar("نظام التنسيق الإلكتروني المطور (أندرويد)"),
+            font_size="15sp",
+            bold=True,
+            size_hint_y=None,
+            height=30,
+            color=(0.1, 0.2, 0.35, 1)
+        )
+        root.add_widget(title_lbl)
+
+        files_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=150)
+
+        btn_excel = Button(
+            text=ar("📊 اختر ملف الإكسيل الرئيسي (.xlsx)"),
+            size_hint_y=None,
+            height=50,
+            font_size="13sp",
+            bold=True,
+            background_color=(0.15, 0.55, 0.3, 1)
+        )
+        btn_excel.bind(on_press=lambda instance: self.open_file_picker("excel"))
+        
+        self.excel_status = Label(
+            text=ar("لم يتم اختيار ملف الإكسيل"),
+            color=(0.4, 0.4, 0.4, 1),
+            font_size="11sp",
+            size_hint_y=None,
+            height=18
+        )
+
+        btn_logo = Button(
+            text=ar("🖼️ اختر صورة الشعار / اللوجو"),
+            size_hint_y=None,
+            height=50,
+            font_size="13sp",
+            bold=True,
+            background_color=(0.2, 0.45, 0.65, 1)
+        )
+        btn_logo.bind(on_press=lambda instance: self.open_file_picker("logo"))
+        
+        self.logo_status = Label(
+            text=ar("لم يتم اختيار اللوجو (اختياري)"),
+            color=(0.4, 0.4, 0.4, 1),
+            font_size="11sp",
+            size_hint_y=None,
+            height=18
+        )
+
+        files_box.add_widget(btn_excel)
+        files_box.add_widget(self.excel_status)
+        files_box.add_widget(btn_logo)
+        files_box.add_widget(self.logo_status)
+        root.add_widget(files_box)
+
+        # التاريخ والمرحلة
+        date_box = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None, height=75)
+        date_box.add_widget(Label(text=ar("إعدادات تاريخ احتساب السن والمرحلة:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=18, font_size="12sp"))
+
+        inputs_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=30)
+        self.day_tf = TextInput(text="1", multiline=False, input_filter="int")
+        self.month_tf = TextInput(text="10", multiline=False, input_filter="int")
+        self.year_tf = TextInput(text="2026", multiline=False, input_filter="int")
+        self.stage_tf = TextInput(text="1", multiline=False, input_filter="int")
+
+        inputs_grid.add_widget(self.day_tf)
+        inputs_grid.add_widget(self.month_tf)
+        inputs_grid.add_widget(self.year_tf)
+        inputs_grid.add_widget(self.stage_tf)
+        date_box.add_widget(inputs_grid)
+
+        labels_grid = GridLayout(cols=4, spacing=5, size_hint_y=None, height=16)
+        labels_grid.add_widget(Label(text=ar("اليوم"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        labels_grid.add_widget(Label(text=ar("الشهر"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        labels_grid.add_widget(Label(text=ar("السنة"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        labels_grid.add_widget(Label(text=ar("المرحلة"), font_size="10sp", color=(0.3, 0.3, 0.3, 1)))
+        date_box.add_widget(labels_grid)
+
+        root.add_widget(date_box)
+
+        # جدول الكثافات
+        root.add_widget(Label(text=ar("الكثافات والحد الأقصى لتاريخ الميلاد المقبول:"), bold=True, color=(0.1, 0.1, 0.1, 1), size_hint_y=None, height=22, font_size="12sp"))
+
+        hdr_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=25, spacing=5)
+        hdr_box.add_widget(Label(text=ar("اسم المدرسة"), size_hint_x=0.5, bold=True, font_size="11sp", color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("الكثافة"), size_hint_x=0.2, bold=True, font_size="11sp", color=(0.2, 0.2, 0.2, 1)))
+        hdr_box.add_widget(Label(text=ar("أقصى تاريخ"), size_hint_x=0.3, bold=True, font_size="11sp", color=(0.2, 0.2, 0.2, 1)))
+        root.add_widget(hdr_box)
+
+        self.schools_layout = GridLayout(cols=1, spacing=6, size_hint_y=None)
+        self.schools_layout.bind(minimum_height=self.schools_layout.setter("height"))
+
+        scroll_view = ScrollView(size_hint=(1, 1))
+        scroll_view.add_widget(self.schools_layout)
+        root.add_widget(scroll_view)
+
+        # الأزرار السفلية
+        bottom_box = BoxLayout(orientation="vertical", spacing=5, size_hint_y=None, height=75)
+        self.run_btn = Button(
+            text=ar("🚀 بدء معالجة التنسيق وتوليد التقارير"),
+            background_color=(0.07, 0.3, 0.36, 1),
+            disabled=True,
+            size_hint_y=None,
+            height=45,
+            font_size="13sp",
+            bold=True
+        )
+        self.run_btn.bind(on_press=self.start_coordination_thread)
+
+        self.status_txt = Label(
+            text=ar("جاهز.. قم باختيار ملف الإكسيل أولاً."),
+            color=(0.3, 0.3, 0.3, 1),
+            font_size="11sp",
+            size_hint_y=None,
+            height=25,
+        )
+
+        bottom_box.add_widget(self.run_btn)
+        bottom_box.add_widget(self.status_txt)
+        root.add_widget(bottom_box)
+
+        return root
+
+    def open_file_picker(self, file_type):
+        content = BoxLayout(orientation="vertical", spacing=10)
+        
+        default_path = "/storage/emulated/0/Download" if platform == 'android' else os.path.expanduser("~")
+        if platform == 'android' and not os.path.exists(default_path):
+            default_path = "/sdcard/Download"
+
+        filechooser = FileChooserListView(path=default_path)
+
+        if file_type == "excel":
+            filechooser.filters = ["*.xlsx"]
+        elif file_type == "logo":
+            filechooser.filters = ["*.png", "*.jpg", "*.jpeg"]
+
+        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
+        select_btn = Button(text=ar("اختيار"))
+        cancel_btn = Button(text=ar("إلغاء"))
+
+        btn_box.add_widget(cancel_btn)
+        btn_box.add_widget(select_btn)
+
+        content.add_widget(filechooser)
+        content.add_widget(btn_box)
+
+        popup = Popup(title=ar("اختر الملف المطلوب"), content=content, size_hint=(0.95, 0.95))
+
+        def on_select(instance):
+            if filechooser.selection:
+                selected = filechooser.selection[0]
+                if file_type == "excel":
+                    self.excel_path = selected
+                    self.excel_status.text = ar(f"تم اختيار: {os.path.basename(selected)}")
+                    self.load_schools()
+                elif file_type == "logo":
+                    self.logo_path = selected
+                    self.logo_status.text = ar(f"تم اختيار اللوجو: {os.path.basename(selected)}")
+            popup.dismiss()
+
+        select_btn.bind(on_press=on_select)
+        cancel_btn.bind(on_press=popup.dismiss)
+        popup.open()
+
+    def clean_school_name(self, name):
+        if name is None or str(name).strip().lower() == "nan":
+            return ""
+        return str(name).replace("\t", "").replace("\r", "").replace("\n", "").strip()
+
+    def get_stage_arabic(self, stage_num):
+        stages = {"1": "الأولى", "2": "الثانية", "3": "الثالثة", "4": "الرابعة", "5": "الخامسة"}
+        return stages.get(str(stage_num), f"الـ {stage_num}")
+
+    def load_schools(self):
         try:
-            self.add_font('ArabicFont', '', font_path, uni=True)
-            self.add_font('ArabicFont', 'B', font_bd_path if os.path.exists(font_bd_path) else font_path, uni=True)
-        except Exception as e:
-            print(f"Font load warning: {e}")
+            self.schools_layout.clear_widgets()
+            self.school_inputs.clear()
 
-    def header(self):
-        if not HAS_PDF_LIBS:
-            return
-        self.set_font('ArabicFont', 'B', 11)
-        
-        # 1. الجزء الأيمن (المديرية والإدارة)
-        self.set_xy(110, 10)
-        self.cell(90, 6, fix_ar("مديرية التربية والتعليم بأسوان"), ln=1, align='R')
-        self.set_x(110)
-        self.cell(90, 6, fix_ar("إدارة المدارس الرسمية والمتميزة للغات"), ln=1, align='R')
-        
-        # 2. الجزء الأيسر (اللوجو)
-        if self.logo_path and os.path.exists(self.logo_path):
-            try:
-                self.image(self.logo_path, x=12, y=10, w=25)
-            except Exception as e:
-                print(f"Logo error: {e}")
+            wb = openpyxl.load_workbook(self.excel_path, read_only=True, data_only=True)
+            school_sheets = [s for s in wb.sheetnames if "المدارس" in s]
+            if not school_sheets:
+                self.show_error_popup("خطأ في الملف", "لم يتم العثور على ورقة عمل تحتوى على كلمة 'المدارس'")
+                wb.close()
+                return
             
-        self.ln(6)
-        
-        # 3. المنتصف (العنوان واسم المدرسة)
-        self.set_font('ArabicFont', 'B', 12)
-        title = f"كشف تنسيق المرحلة ({self.stage_name}) للعام الدراسي {self.school_year}"
-        self.cell(0, 7, fix_ar(title), ln=1, align='C')
-        
-        school_str = f"اسم المدرسة : {self.school_name}"
-        self.cell(0, 7, fix_ar(school_str), ln=1, align='C')
-        self.ln(3)
+            ws_schools = wb[school_sheets[0]]
+            rows = list(ws_schools.iter_rows(values_only=True))
+            wb.close()
 
-    def draw_table_header(self):
-        if not HAS_PDF_LIBS:
-            return
-        self.set_font('ArabicFont', 'B', 10)
-        curr_y = self.get_y()
-        
-        # رسم الترويسة المدمجة (من اليمين لليسار)
-        self.set_xy(10, curr_y)
-        self.cell(44, 12, fix_ar("ملاحظات"), border=1, align='C')
-        self.cell(36, 6, fix_ar("السن في أول أكتوبر"), border=1, align='C')
-        self.cell(25, 12, fix_ar("تاريخ الميلاد"), border=1, align='C')
-        self.cell(55, 12, fix_ar("اسم الطالب"), border=1, align='C')
-        self.cell(10, 12, fix_ar("م"), border=1, align='C')
-        
-        # الصف الثاني لتقسيم السن
-        self.set_xy(54, curr_y + 6)
-        self.cell(12, 6, fix_ar("سنة"), border=1, align='C')
-        self.cell(12, 6, fix_ar("شهر"), border=1, align='C')
-        self.cell(12, 6, fix_ar("يوم"), border=1, align='C')
-        
-        self.set_xy(10, curr_y + 12)
+            if not rows:
+                return
 
-    def footer_signatures(self):
-        if not HAS_PDF_LIBS:
-            return
-        self.set_y(-28)
-        self.set_font('ArabicFont', 'B', 11)
-        
-        col_w = 63
-        self.set_x(10)
-        # التوقيعات من اليمين لليسار
-        self.cell(col_w, 6, fix_ar("يعتمد مدير المديرية"), border=0, align='C')
-        self.cell(col_w, 6, fix_ar("مدير التعليم العام"), border=0, align='C')
-        self.cell(col_w, 6, fix_ar("لجنة التنسيق"), border=0, align='C')
+            headers = [str(h) if h is not None else "" for h in rows[0]]
+            col_school_title_idx = None
+            for idx, h in enumerate(headers):
+                if "اسم المدرسة" in h:
+                    col_school_title_idx = idx
+                    break
 
+            unique_schools_set = set()
+            for r in rows[1:]:
+                if col_school_title_idx is not None and col_school_title_idx < len(r):
+                    cleaned = self.clean_school_name(r[col_school_title_idx])
+                    if cleaned:
+                        unique_schools_set.add(cleaned)
 
-# ==========================================
-# 6. إضافة شيتات المدارس لملف الإكسيل
-# ==========================================
-def add_school_sheets_to_excel(excel_path, output_excel_path, schools_data):
-    wb = openpyxl.load_workbook(excel_path)
-    
-    header_font = Font(name='Arial', size=11, bold=True)
-    data_font = Font(name='Arial', size=10)
-    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    right_align = Alignment(horizontal='right', vertical='center', wrap_text=True)
-    thin_border = Border(
-        left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'),
-        top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3')
-    )
+            unique_schools = sorted(list(unique_schools_set))
 
-    for school_name, students in schools_data.items():
-        clean_title = str(school_name)[:30].replace(":", "").replace("/", "-").replace("\\", "").replace("?", "").replace("*", "")
-        
-        if clean_title in wb.sheetnames:
-            ws = wb[clean_title]
-            ws.delete_rows(1, ws.max_row + 1)
-        else:
-            ws = wb.create_sheet(title=clean_title)
+            for sch_name in unique_schools:
+                row_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=45, spacing=5)
+                
+                name_lbl = Label(
+                    text=ar(sch_name),
+                    size_hint_x=0.5,
+                    halign="right",
+                    valign="middle",
+                    font_size="11sp",
+                    color=(0.1, 0.1, 0.1, 1)
+                )
+                name_lbl.bind(size=lambda instance, value: setattr(instance, 'text_size', (value[0], None)))
+
+                cap_tf = TextInput(text="45", multiline=False, input_filter="int", size_hint_x=0.2, font_size="11sp")
+                age_tf = TextInput(text="2022-10-01", multiline=False, size_hint_x=0.3, font_size="11sp")
+
+                row_box.add_widget(name_lbl)
+                row_box.add_widget(cap_tf)
+                row_box.add_widget(age_tf)
+
+                self.school_inputs[sch_name] = (cap_tf, age_tf)
+                self.schools_layout.add_widget(row_box)
+
+            self.run_btn.disabled = False
+            self.status_txt.text = ar(f"تم تحميل عدد ({len(unique_schools)}) مدرسة بنجاح.")
+
+        except Exception as ex:
+            self.show_error_popup("خطأ تحميل المدارس", str(ex))
+
+    def calculate_exact_ymd(self, dob, calc_date):
+        dob_dt = parse_date(dob)
+        if not dob_dt:
+            return "", "", ""
+        try:
+            y = calc_date.year - dob_dt.year
+            m = calc_date.month - dob_dt.month
+            d = calc_date.day - dob_dt.day
+            if d < 0:
+                prev_m = calc_date.month - 1 if calc_date.month > 1 else 12
+                prev_y = calc_date.year if calc_date.month > 1 else calc_date.year - 1
+                days_in_prev = calendar.monthrange(prev_y, prev_m)[1]
+                d += days_in_prev
+                m -= 1
+            if m < 0:
+                m += 12
+                y -= 1
+            return int(y), int(m), int(d)
+        except Exception:
+            return "", "", ""
+
+    # =========================================================================
+    # 📌 التعديل المطلوب: دالة استخراج PDF الرسمية والمنسقة بالكامل
+    # =========================================================================
+    def generate_pdf_report(self, school_name, students_list, pdf_file_path, stage_arabic, calc_date):
+        try:
+            pdf = FPDF(orientation="P", unit="mm", format="A4")
+            pdf.set_auto_page_break(auto=True, margin=20)
+            pdf.add_page()
+
+            if FONT_PATH and os.path.exists(FONT_PATH):
+                pdf.add_font("ArabicFont", "", FONT_PATH)
+                pdf.set_font("ArabicFont", size=11)
+            else:
+                pdf.set_font("Helvetica", size=10)
+
+            # 1. الترويسة الرسمية (يمين: المديرية، يسار: اللوجو)
+            pdf.set_xy(10, 10)
+            pdf.cell(100, 6, txt=ar("مديرية التربية والتعليم بأسوان"), ln=True, align="R")
+            pdf.set_x(10)
+            pdf.cell(100, 6, txt=ar("إدارة المدارس الرسمية والمتميزة للغات"), ln=True, align="R")
+
+            if self.logo_path and os.path.exists(self.logo_path):
+                try:
+                    pdf.image(self.logo_path, x=165, y=8, w=25)
+                except Exception as img_err:
+                    print(f"Error drawing logo: {img_err}")
+
+            pdf.ln(4)
+
+            # 2. عنوان الكشف المنسق
+            calc_year = calc_date.year if isinstance(calc_date, (datetime, date)) else 2026
+            school_year_str = f"{calc_year}/{calc_year + 1}"
             
-        ws.sheet_view.rightToLeft = True
+            pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=12)
+            title_str = f"كشف تنسيق المرحلة ({stage_arabic}) للعام الدراسي {school_year_str}"
+            pdf.cell(190, 7, txt=ar(title_str), ln=True, align="C")
+            pdf.cell(190, 7, txt=ar(f"اسم المدرسة : {school_name}"), ln=True, align="C")
+            pdf.ln(3)
 
-        # إعداد هيدر الشيت
-        ws.merge_cells('A1:A2')
-        ws['A1'] = "م"
-        
-        ws.merge_cells('B1:B2')
-        ws['B1'] = "اسم الطالب"
-        
-        ws.merge_cells('C1:C2')
-        ws['C1'] = "تاريخ الميلاد"
-        
-        ws.merge_cells('D1:F1')
-        ws['D1'] = "السن في أول أكتوبر"
-        
-        ws['D2'] = "سنة"
-        ws['E2'] = "شهر"
-        ws['F2'] = "يوم"
-        
-        ws.merge_cells('G1:G2')
-        ws['G1'] = "ملاحظات"
+            # 3. دالة رسم هيدر الجدول (مدمج وتقسيم السن)
+            def draw_table_header():
+                pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=10)
+                curr_y = pdf.get_y()
+                
+                # ترتيب الأعمدة من اليمين لليسار (إجمالي العرض 190 مم)
+                pdf.set_xy(10, curr_y)
+                pdf.cell(64, 12, txt=ar("الملاحظات"), border=1, align="C")
+                pdf.cell(36, 6, txt=ar("السن في أول أكتوبر"), border=1, align="C")
+                pdf.cell(25, 12, txt=ar("تاريخ الميلاد"), border=1, align="C")
+                pdf.cell(55, 12, txt=ar("اسم الطالب"), border=1, align="C")
+                pdf.cell(10, 12, txt=ar("م"), border=1, align="C")
+                
+                # الصف الثاني لتقسيم السن (سنة / شهر / يوم)
+                pdf.set_xy(74, curr_y + 6)
+                pdf.cell(12, 6, txt=ar("سنة"), border=1, align="C")
+                pdf.cell(12, 6, txt=ar("شهر"), border=1, align="C")
+                pdf.cell(12, 6, txt=ar("يوم"), border=1, align="C")
+                
+                pdf.set_xy(10, curr_y + 12)
 
-        for row in ws.iter_rows(min_row=1, max_row=2, min_col=1, max_col=7):
-            for cell in row:
-                cell.font = header_font
-                cell.alignment = center_align
-                cell.border = thin_border
+            draw_table_header()
 
-        col_widths = {'A': 6, 'B': 32, 'C': 15, 'D': 8, 'E': 8, 'F': 8, 'G': 25}
-        for col, width in col_widths.items():
-            ws.column_dimensions[col].width = width
-
-        # إضافة الطلاب
-        for idx, student in enumerate(students, 1):
-            r = idx + 2
-            ws.cell(row=r, column=1, value=idx).alignment = center_align
-            ws.cell(row=r, column=2, value=student.get('name', '')).alignment = right_align
-            ws.cell(row=r, column=3, value=student.get('dob', '')).alignment = center_align
-            ws.cell(row=r, column=4, value=student.get('age_years', 0)).alignment = center_align
-            ws.cell(row=r, column=5, value=student.get('age_months', 0)).alignment = center_align
-            ws.cell(row=r, column=6, value=student.get('age_days', 0)).alignment = center_align
-            ws.cell(row=r, column=7, value=student.get('notes', '')).alignment = right_align
+            # 4. تعبئة صفوف الطلاب
+            pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=9)
             
-            for col_idx in range(1, 8):
-                c = ws.cell(row=r, column=col_idx)
-                c.font = data_font
-                c.border = thin_border
+            for idx, st in enumerate(students_list, start=1):
+                # نقل الصفحة عند الامتلاء
+                if pdf.get_y() > 245:
+                    pdf.add_page()
+                    draw_table_header()
+                    pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=9)
 
-    wb.save(output_excel_path)
+                dob_dt = st.get("dob_dt")
+                dob_str = dob_dt.strftime("%Y-%m-%d") if dob_dt else ""
+                y, m, d = self.calculate_exact_ymd(dob_dt, calc_date)
 
+                y_str = str(y) if y != "" else ""
+                m_str = str(m) if m != "" else ""
+                d_str = str(d) if d != "" else ""
 
-# ==========================================
-# 7. توليد تقارير PDF المدارس
-# ==========================================
-def generate_all_pdf_reports(schools_data, stage_name, school_year, output_dir, logo_path=None):
-    if not HAS_PDF_LIBS:
-        return
-        
-    os.makedirs(output_dir, exist_ok=True)
-    
-    for school_name, students in schools_data.items():
-        safe_school_name = str(school_name).replace(":", "").replace("/", "-").replace("\\", "")
-        pdf_filename = os.path.join(output_dir, f"كشف_{safe_school_name}_المرحلة_{stage_name}.pdf")
-        
-        pdf = SchoolReportPDF(school_name, stage_name, school_year, logo_path)
-        pdf.add_page()
-        pdf.draw_table_header()
-        
-        pdf.set_font('ArabicFont', '', 10)
-        
-        for idx, student in enumerate(students, 1):
-            if pdf.get_y() > 240:
+                curr_y = pdf.get_y()
+                pdf.set_xy(10, curr_y)
+                pdf.cell(64, 7, txt=ar(st.get("notes", "")), border=1, align="R")
+                pdf.cell(12, 7, txt=y_str, border=1, align="C")
+                pdf.cell(12, 7, txt=m_str, border=1, align="C")
+                pdf.cell(12, 7, txt=d_str, border=1, align="C")
+                pdf.cell(25, 7, txt=dob_str, border=1, align="C")
+                pdf.cell(55, 7, txt=ar(st.get("name", "")), border=1, align="R")
+                pdf.cell(10, 7, txt=str(idx), border=1, align="C", ln=True)
+
+            # 5. التوقيعات الثلاثية المعتمدة أسفل الصفحة
+            if pdf.get_y() > 250:
                 pdf.add_page()
-                pdf.draw_table_header()
-                pdf.set_font('ArabicFont', '', 10)
-                
+
+            pdf.ln(8)
+            pdf.set_font("ArabicFont" if FONT_PATH else "Helvetica", size=10)
             curr_y = pdf.get_y()
-            
-            # كتابة السطر (يمين إلى يسار)
             pdf.set_xy(10, curr_y)
-            pdf.cell(44, 7, fix_ar(student.get('notes', '')), border=1, align='R')
-            pdf.cell(12, 7, str(student.get('age_years', '')), border=1, align='C')
-            pdf.cell(12, 7, str(student.get('age_months', '')), border=1, align='C')
-            pdf.cell(12, 7, str(student.get('age_days', '')), border=1, align='C')
-            pdf.cell(25, 7, str(student.get('dob', '')), border=1, align='C')
-            pdf.cell(55, 7, fix_ar(student.get('name', '')), border=1, align='R')
-            pdf.cell(10, 7, str(idx), border=1, align='C', ln=1)
+            pdf.cell(63, 6, txt=ar("يعتمد مدير المديرية"), border=0, align="C")
+            pdf.cell(63, 6, txt=ar("مدير التعليم العام"), border=0, align="C")
+            pdf.cell(64, 6, txt=ar("لجنة التنسيق"), border=0, align="C")
 
-        pdf.footer_signatures()
-        pdf.output(pdf_filename)
+            pdf.output(pdf_file_path)
+        except Exception as e:
+            print(f"PDF generation error: {e}")
+            traceback.print_exc()
 
-
-# ==========================================
-# 8. المعالجة الرئيسية
-# ==========================================
-def process_coordination(excel_path, logo_path, stage_name="الأولى", school_year="2026/2027", target_date_str="2026-10-01"):
-    if not os.path.exists(excel_path):
-        raise FileNotFoundError(f"لم يتم العثور على الملف: {excel_path}")
-
-    target_date = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
-    
-    wb = openpyxl.load_workbook(excel_path)
-    sheet_name = "الطلاب" if "الطلاب" in wb.sheetnames else wb.sheetnames[0]
-    ws = wb[sheet_name]
-
-    schools_data = {}
-    
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or not any(row):
-            continue
-            
-        student_name = row[1] if len(row) > 1 else ""
-        dob_raw = row[2] if len(row) > 2 else ""
-        assigned_school = row[3] if len(row) > 3 else "قائمة الانتظار"
-        notes = row[4] if len(row) > 4 else "مقبول تساوي سن"
+    def start_coordination_thread(self, instance):
+        self.run_btn.disabled = True
         
-        if not student_name:
-            continue
-            
-        y, m, d = calculate_age(dob_raw, target_date)
-        dob_str = dob_raw.strftime("%Y-%m-%d") if isinstance(dob_raw, (datetime.date, datetime.datetime)) else str(dob_raw)
+        content = BoxLayout(orientation="vertical", padding=15, spacing=10)
+        self.loading_label = Label(
+            text=ar("⏳ جاري بدء معالجة الملف..."),
+            halign="center",
+            color=(0.1, 0.6, 0.8, 1),
+            font_size="13sp"
+        )
+        self.loading_label.bind(size=self.loading_label.setter('text_size'))
+        content.add_widget(self.loading_label)
         
-        student_dict = {
-            'name': student_name,
-            'dob': dob_str,
-            'age_years': y,
-            'age_months': m,
-            'age_days': d,
-            'notes': notes
-        }
-        
-        school_key = str(assigned_school).strip() if assigned_school else "قائمة الانتظار"
-        if school_key not in schools_data:
-            schools_data[school_key] = []
-            
-        schools_data[school_key].append(student_dict)
+        self.loading_popup = Popup(
+            title=ar("جاري معالجة البيانات"),
+            content=content,
+            size_hint=(0.85, 0.35),
+            auto_dismiss=False
+        )
+        self.loading_popup.open()
 
-    dir_name = os.path.dirname(excel_path) or "."
-    output_excel_name = f"منظومة_التنسيق_المرحلة_{stage_name}.xlsx"
-    output_excel_path = os.path.join(dir_name, output_excel_name)
-    
-    # 1. تحديث الإكسيل وإضافة شيتات المدارس
-    add_school_sheets_to_excel(excel_path, output_excel_path, schools_data)
-    
-    # 2. توليد كشوف ה-PDF
-    output_pdf_dir = os.path.join(dir_name, f"كشوف_المدارس_المرحلة_{stage_name}_PDF")
-    generate_all_pdf_reports(schools_data, stage_name, school_year, output_pdf_dir, logo_path)
-    
-    return output_excel_path, output_pdf_dir
+        threading.Thread(target=self.run_coordination_process, daemon=True).start()
 
+    def update_loading_status(self, text):
+        Clock.schedule_once(lambda dt: setattr(self.loading_label, 'text', ar(text)))
 
-# ==========================================
-# 9. واجهة Kivy المحدثة لدعم العربية
-# ==========================================
-if HAS_KIVY:
-    class KGCoordinationGUI(BoxLayout):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            self.orientation = 'vertical'
-            self.padding = 15
-            self.spacing = 10
-            
-            # العناوين مع المعالجة العربية
-            self.add_widget(Label(text=fix_ar("مديرية التربية والتعليم بأسوان"), font_size='20sp', size_hint_y=None, height=35))
-            self.add_widget(Label(text=fix_ar("منظومة تنسيق رياض الأطفال والمدارس الرسمية للغات"), font_size='15sp', size_hint_y=None, height=30))
-            
-            # حقول الإدخال
-            grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height=180)
-            
-            grid.add_widget(Label(text=fix_ar("مسار ملف الإكسيل:")))
-            self.excel_input = TextInput(text="students.xlsx", multiline=False)
-            grid.add_widget(self.excel_input)
-            
-            grid.add_widget(Label(text=fix_ar("مسار صورة اللوجو (اختياري):")))
-            self.logo_input = TextInput(text="logo.png", multiline=False)
-            grid.add_widget(self.logo_input)
-            
-            grid.add_widget(Label(text=fix_ar("اسم المرحلة:")))
-            self.stage_input = TextInput(text="الأولى", multiline=False)
-            grid.add_widget(self.stage_input)
-            
-            grid.add_widget(Label(text=fix_ar("العام الدراسي:")))
-            self.year_input = TextInput(text="2026/2027", multiline=False)
-            grid.add_widget(self.year_input)
-            
-            self.add_widget(grid)
-            
-            # زر التشغيل
-            self.btn_run = Button(
-                text=fix_ar("بدء التنسيق واستخراج التقارير"), 
-                background_color=(0.2, 0.6, 0.2, 1), 
-                font_size='18sp', 
-                size_hint_y=None, 
-                height=50
-            )
-            self.btn_run.bind(on_press=self.run_process)
-            self.add_widget(self.btn_run)
-            
-            # منطقة المخرجات والسجلات
-            self.log_area = TextInput(readonly=True, text=fix_ar("جاهز لبدء العمل...\n"))
-            self.add_widget(self.log_area)
+    def run_coordination_process(self):
+        try:
+            year_str = self.year_tf.text
+            stage_num = int(self.stage_tf.text)
+            stage_arabic = self.get_stage_arabic(stage_num)
 
-        def log(self, msg):
-            self.log_area.text += fix_ar(str(msg)) + "\n"
-
-        def run_process(self, instance):
             try:
-                excel_p = self.excel_input.text.strip()
-                logo_p = self.logo_input.text.strip()
-                stage_p = self.stage_input.text.strip()
-                year_p = self.year_input.text.strip()
-                
-                self.log("جاري معالجة البيانات واستخراج التقارير...")
-                out_excel, out_pdf = process_coordination(excel_p, logo_p if os.path.exists(logo_p) else None, stage_p, year_p)
-                
-                self.log(f"تم بنجاح! تم حفظ ملف الإكسيل:\n{out_excel}")
-                self.log(f"تم حفظ تقارير الـ PDF في المجلد:\n{out_pdf}")
-            except Exception as e:
-                self.log(f"حدث خطأ أثناء المعالجة: {e}")
+                calc_date = datetime(int(year_str), int(self.month_tf.text), int(self.day_tf.text))
+            except Exception:
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("تاريخ غير صحيح", "يرجى كتابة التاريخ بشكل صحيح."))
+                return
 
-    class KGApp(App):
-        def build(self):
-            self.title = fix_ar("منظومة تنسيق رياض الأطفال - أسوان")
-            return KGCoordinationGUI()
+            output_dir = os.path.dirname(self.excel_path)
+            output_file = os.path.join(output_dir, f"منظومة_التنسيق_المرحلة_{stage_arabic}.xlsx")
+            pdf_folder = os.path.join(output_dir, f"كشوف_المدارس_المرحلة_{stage_arabic}_PDF")
+            os.makedirs(pdf_folder, exist_ok=True)
+
+            self.update_loading_status("📖 قراءة الملف من الذاكرة (سريع)...")
+            
+            wb_fast = openpyxl.load_workbook(self.excel_path, read_only=True, data_only=True)
+            student_sheets = [s for s in wb_fast.sheetnames if "الطلاب" in s]
+            if not student_sheets:
+                wb_fast.close()
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("خطأ في الملف", "لم يتم العثور على ورقة 'الطلاب'"))
+                return
+            
+            ws_fast = wb_fast[student_sheets[0]]
+            all_rows = list(ws_fast.iter_rows(values_only=True))
+            wb_fast.close()
+
+            if not all_rows or len(all_rows) < 2:
+                Clock.schedule_once(lambda dt: self.finish_coordination_with_error("تنبيه", "ورقة الطلاب فارغة!"))
+                return
+
+            headers = [str(h) if h is not None else "" for h in all_rows[0]]
+
+            def find_col(condition_fn, default=None):
+                for idx, h in enumerate(headers):
+                    if condition_fn(h):
+                        return idx
+                return default
+
+            col_dob_idx = find_col(lambda h: "تاريخ الميلاد" in h)
+            col_student_name_idx = find_col(lambda h: "اسم الطالب" in h or ("الاسم" in h and "المدرسة" not in h), default=1)
+
+            col_r1_name_idx = find_col(lambda h: "رغبة (1)اسم" in h)
+            col_r1_code_idx = find_col(lambda h: "رغبة (1)م" in h)
+            col_r2_name_idx = find_col(lambda h: "رغبة (2)اسم" in h)
+            col_r2_code_idx = find_col(lambda h: "رغبة (2)م" in h)
+            col_r3_name_idx = find_col(lambda h: "رغبة (3)اسم" in h)
+            col_r3_code_idx = find_col(lambda h: "رغبة (3)م" in h)
+            col_r4_name_idx = find_col(lambda h: "المدرسة المتميزة" in h and "كود" not in h)
+            col_r4_code_idx = find_col(lambda h: "كود المدرسة المتميزة" in h)
+
+            col_out_name_idx = find_col(lambda h: "اسم" in h and "التسكين" in h)
+            col_out_code_idx = find_col(lambda h: "كود" in h and "التسكين" in h)
+            col_notes_idx = find_col(lambda h: "الملاحظات" in h)
+
+            students = []
+            for r_idx, row_vals in enumerate(all_rows[1:], start=2):
+                def get_v(idx):
+                    if idx is not None and idx < len(row_vals):
+                        return row_vals[idx]
+                    return None
+
+                dob_val = get_v(col_dob_idx)
+                dob_dt = parse_date(dob_val)
+
+                st = {
+                    "row_idx": r_idx,
+                    "name": get_v(col_student_name_idx),
+                    "dob_val": dob_val,
+                    "dob_dt": dob_dt,
+                    "r1_name": get_v(col_r1_name_idx),
+                    "r1_code": get_v(col_r1_code_idx),
+                    "r2_name": get_v(col_r2_name_idx),
+                    "r2_code": get_v(col_r2_code_idx),
+                    "r3_name": get_v(col_r3_name_idx),
+                    "r3_code": get_v(col_r3_code_idx),
+                    "r4_name": get_v(col_r4_name_idx),
+                    "r4_code": get_v(col_r4_code_idx),
+                    "out_name": str(get_v(col_out_name_idx) or "").strip(),
+                    "out_code": get_v(col_out_code_idx),
+                    "notes": "" if stage_num == 1 else (get_v(col_notes_idx) or ""),
+                }
+                students.append(st)
+
+            total_st_count = len(students)
+            self.update_loading_status(f"🔄 جاري تسكين عدد ({total_st_count}) طالب...")
+
+            school_capacities = {}
+            school_min_dobs = {}
+            school_last_dob = {}
+            school_accepted_count = {}
+
+            for sch_name, (cap_tf, age_tf) in self.school_inputs.items():
+                c_name = self.clean_school_name(sch_name)
+                try:
+                    school_capacities[c_name] = int(cap_tf.text)
+                except Exception:
+                    school_capacities[c_name] = 45
+
+                min_dob = parse_date(age_tf.text)
+                if not min_dob:
+                    min_dob = datetime(2022, 10, 1)
+                school_min_dobs[c_name] = min_dob
+
+                school_last_dob[c_name] = None
+                school_accepted_count[c_name] = 0
+
+                if stage_num > 1:
+                    alloc_dobs = [s["dob_dt"] for s in students if self.clean_school_name(s["out_name"]) == c_name and s["dob_dt"] is not None]
+                    if alloc_dobs:
+                        school_last_dob[c_name] = max(alloc_dobs)
+
+            for st in students:
+                curr_alloc = st["out_name"]
+                if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
+                    sch_name_str = self.clean_school_name(curr_alloc)
+                    if sch_name_str in school_accepted_count:
+                        school_accepted_count[sch_name_str] += 1
+
+            students_sorted = sorted(students, key=lambda x: x["dob_dt"] if x["dob_dt"] is not None else datetime.max)
+
+            for idx_st, st in enumerate(students_sorted, start=1):
+                if idx_st % 50 == 0:
+                    self.update_loading_status(f"⚙️ جاري معالجة الطالب ({idx_st} / {total_st_count})...")
+
+                curr_alloc = st["out_name"]
+                if stage_num > 1 and curr_alloc and curr_alloc not in ["قائمة الانتظار", "nan", ""]:
+                    continue
+
+                dob_dt = st["dob_dt"]
+                allocated = False
+                rejected_by_age = False
+
+                choices = [
+                    (st["r4_name"], st["r4_code"]),
+                    (st["r1_name"], st["r1_code"]),
+                    (st["r2_name"], st["r2_code"]),
+                    (st["r3_name"], st["r3_code"]),
+                ]
+
+                for sch_name, sch_code in choices:
+                    sch_name_str = self.clean_school_name(sch_name)
+                    if sch_name_str and sch_name_str not in ["لا يوجد", "nan"]:
+                        if sch_name_str not in school_capacities:
+                            school_capacities[sch_name_str] = 45
+                            school_min_dobs[sch_name_str] = datetime(2022, 10, 1)
+                            school_last_dob[sch_name_str] = None
+                            school_accepted_count[sch_name_str] = 0
+
+                        if dob_dt and dob_dt > school_min_dobs[sch_name_str]:
+                            rejected_by_age = True
+                            continue
+
+                        if school_capacities[sch_name_str] > 0:
+                            st["out_name"] = sch_name_str
+                            st["out_code"] = sch_code
+                            school_capacities[sch_name_str] -= 1
+                            school_accepted_count[sch_name_str] += 1
+                            school_last_dob[sch_name_str] = dob_dt
+                            allocated = True
+                            break
+                        elif school_capacities[sch_name_str] == 0 and school_last_dob[sch_name_str] == dob_dt and dob_dt is not None:
+                            st["out_name"] = sch_name_str
+                            st["out_code"] = sch_code
+                            school_accepted_count[sch_name_str] += 1
+                            st["notes"] = "مقبول تساوي سن"
+                            allocated = True
+                            break
+
+                if not allocated:
+                    st["out_name"] = "قائمة الانتظار"
+                    st["out_code"] = 0
+                    st["notes"] = "استنفاذ رغبات اقل من السن المحدد" if rejected_by_age else "استنفاذ رغبات"
+
+            self.update_loading_status("💾 كتابة النتائج داخل الملف...")
+            
+            wb_write = openpyxl.load_workbook(self.excel_path)
+            ws_write = wb_write[student_sheets[0]]
+
+            headers_write = [cell.value for cell in ws_write[1]]
+            
+            def get_col_1based(name_fn):
+                for i, h in enumerate(headers_write):
+                    if h and name_fn(str(h)):
+                        return i + 1
+                return None
+
+            c_out_n = get_col_1based(lambda h: "اسم" in h and "التسكين" in h)
+            c_out_c = get_col_1based(lambda h: "كود" in h and "التسكين" in h)
+            c_notes = get_col_1based(lambda h: "الملاحظات" in h)
+            
+            if not c_notes:
+                c_notes = len(headers_write) + 1
+                ws_write.cell(row=1, column=c_notes, value="الملاحظات")
+
+            for st in students:
+                r_idx = st["row_idx"]
+                if c_out_n: ws_write.cell(row=r_idx, column=c_out_n, value=st["out_name"])
+                if c_out_c: ws_write.cell(row=r_idx, column=c_out_c, value=st["out_code"])
+                ws_write.cell(row=r_idx, column=c_notes, value=st["notes"])
+
+            wb_write.save(output_file)
+            wb_write.close()
+
+            self.update_loading_status("📄 جاري توليد كشوف الـ PDF...")
+            grouped_students = {}
+            for st in students:
+                alloc = st["out_name"] or "غير مسكن"
+                grouped_students.setdefault(alloc, []).append(st)
+
+            for sch_title, st_list in grouped_students.items():
+                safe_filename = f"كشف_{sch_title.replace(' ', '_')}_المرحلة_{stage_arabic}.pdf"
+                pdf_out_path = os.path.join(pdf_folder, safe_filename)
+                self.generate_pdf_report(sch_title, st_list, pdf_out_path, stage_arabic, calc_date)
+
+            Clock.schedule_once(lambda dt: self.finish_coordination_success(pdf_folder))
+
+        except Exception as err:
+            err_details = traceback.format_exc()
+            Clock.schedule_once(lambda dt: self.finish_coordination_with_error("حدث خطأ أثناء التنسيق", f"تفاصيل الخطأ:\n{str(err)}\n\n{err_details}"))
+
+    def finish_coordination_success(self, pdf_folder):
+        if self.loading_popup:
+            self.loading_popup.dismiss()
+        self.run_btn.disabled = False
+        self.status_txt.text = ar(f"✅ تم الانتهاء بنجاح وحفظ ملفات PDF في:\n{pdf_folder}")
+
+    def finish_coordination_with_error(self, title, err_msg):
+        if self.loading_popup:
+            self.loading_popup.dismiss()
+        self.run_btn.disabled = False
+        self.show_error_popup(title, err_msg)
+
 
 if __name__ == "__main__":
-    if HAS_KIVY:
-        KGApp().run()
-    else:
-        print("Kivy is not installed. Running backend logic...")
+    CoordinationKivyApp().run()
